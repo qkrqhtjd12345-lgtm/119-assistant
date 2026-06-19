@@ -20,7 +20,9 @@ st.set_page_config(
     page_icon="🚒",
     layout="wide",
     initial_sidebar_state="expanded",
-)APP_NAME = "충남119 복무AI"
+)
+
+APP_NAME = "충남119 복무AI"
 APP_VERSION = "v5.1 안정화본"
 DATA_FILE = "data_store.json"
 PRIMARY = "#1F6F78"
