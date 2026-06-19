@@ -581,3 +581,4 @@ else:
     <div style="text-align:center;color:{TEXT_GRAY};font-size:12px;padding:16px 0;">
         충남119 복무AI v3.0 · 충남소방본부 · {datetime.now().strftime('%Y년 %m월 %d일')}
     </div>
+    """, unsafe_allow_html=True)
