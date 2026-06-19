@@ -1,19 +1,18 @@
 import streamlit as st
 from datetime import datetime
 import hashlib
+
 st.set_page_config(
     page_title="충남119 복무AI",
     page_icon="🚒",
     layout="wide",
     initial_sidebar_state="expanded"
-)# ========================================
-# 보안: 비밀번호 해싱
-# ========================================
+)
+
 def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
-# ========================================
+
 # 세션 초기화
-# ========================================
 if "users" not in st.session_state:
     st.session_state.users = {
         "qhtjd0611": {
@@ -23,42 +22,50 @@ if "users" not in st.session_state:
             "created_at": "2024-01-01"
         }
     }
+
 if "login_user" not in st.session_state:
     st.session_state.login_user = None
+
 if "suggestions" not in st.session_state:
     st.session_state.suggestions = []
+
+if "resources" not in st.session_state:  # 승인된 자료명 저장
+    st.session_state.resources = []
+
 if "faq_counts" not in st.session_state:
     st.session_state.faq_counts = {
         "병가": 0, "공가": 0, "초과근무": 0,
         "e사람": 0, "온나라": 0, "e호조": 0,
         "법령": 0, "조례": 0,
     }
-# ========================================
+
 # 색상
-# ========================================
 NAVY = "#1C3A5C"
 LIGHT_BG = "#F8F8F6"
 WHITE = "#FFFFFF"
 TEXT_DARK = "#333333"
 TEXT_GRAY = "#666666"
 BORDER_GRAY = "#DDDDDD"
-# ========================================
+
 # CSS
-# ========================================
 st.markdown(f"""
 <style>
     * {{
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', '나눔고딕', sans-serif;
     }}
+
     .stApp {{
         background-color: {LIGHT_BG};
     }}
+
     section[data-testid="stSidebar"] {{
         background-color: {NAVY};
     }}
+
     section[data-testid="stSidebar"] * {{
         color: {WHITE} !important;
     }}
+
     section[data-testid="stSidebar"] .stRadio > label {{
         color: {WHITE} !important;
         font-weight: 600;
@@ -67,13 +74,16 @@ st.markdown(f"""
         transition: all 0.2s ease;
         margin-bottom: 6px;
     }}
+
     section[data-testid="stSidebar"] .stRadio > label:hover {{
         background-color: rgba(255, 255, 255, 0.1);
     }}
+
     section[data-testid="stSidebar"] .stRadio > label[aria-selected="true"] {{
         background-color: rgba(255, 255, 255, 0.2);
         font-weight: 700;
     }}
+
     .info-box {{
         background: {WHITE};
         border: 1px solid {BORDER_GRAY};
@@ -82,6 +92,7 @@ st.markdown(f"""
         margin-bottom: 20px;
         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
     }}
+
     .info-box-title {{
         color: {NAVY};
         font-weight: 700;
@@ -90,6 +101,7 @@ st.markdown(f"""
         padding-bottom: 8px;
         border-bottom: 2px solid {NAVY};
     }}
+
     .stButton > button {{
         background-color: {NAVY};
         color: {WHITE};
@@ -98,31 +110,22 @@ st.markdown(f"""
         font-weight: 600;
         transition: all 0.2s ease;
     }}
+
     .stButton > button:hover {{
         background-color: #162844;
         box-shadow: 0 2px 6px rgba(28, 58, 92, 0.3);
     }}
+
     div[data-testid="stTextInput"] input {{
         border: 1px solid {BORDER_GRAY} !important;
         border-radius: 6px !important;
-        padding: 10px 12px !important;
     }}
-    div[data-testid="stTextInput"] input:focus {{
-        border-color: {NAVY} !important;
-        box-shadow: 0 0 0 2px rgba(28, 58, 92, 0.1) !important;
-    }}
-    .stTabs [data-baseweb="tab-list"] {{
-        border-bottom: 1px solid {BORDER_GRAY};
-    }}
-    .stTabs [data-baseweb="tab-list"] button {{
-        font-weight: 600;
-        color: {TEXT_GRAY};
-        border-bottom: 2px solid transparent;
-    }}
+
     .stTabs [data-baseweb="tab-list"] button[aria-selected="true"] {{
         color: {NAVY};
         border-bottom-color: {NAVY};
     }}
+
     .badge {{
         display: inline-block;
         padding: 6px 12px;
@@ -130,14 +133,12 @@ st.markdown(f"""
         font-weight: 600;
         font-size: 12px;
     }}
-    .badge-pending {{
-        background: #FFF3CD;
-        color: #856404;
-    }}
+
     .badge-approved {{
         background: #D4EDDA;
         color: #155724;
     }}
+
     .user-info {{
         background: {WHITE};
         border: 1px solid {BORDER_GRAY};
@@ -145,49 +146,37 @@ st.markdown(f"""
         padding: 16px;
         margin-top: 20px;
     }}
-    .user-info-label {{
-        color: {TEXT_GRAY};
-        font-size: 12px;
-        font-weight: 600;
-        text-transform: uppercase;
-        margin-bottom: 4px;
-    }}
-    .user-info-value {{
-        color: {TEXT_DARK};
-        font-weight: 700;
-        font-size: 15px;
-    }}
 </style>
 """, unsafe_allow_html=True)
-# ========================================
-# 함수
-# ========================================
+
 def get_role():
     user = st.session_state.login_user
     return st.session_state.users[user]["role"]
+
 def is_admin():
     return get_role() == "admin"
+
 def classify_question(q: str):
     q = q.lower()
     categories = {
         "병가": ["병가"], "공가": ["공가"], "초과근무": ["초과", "시간외"],
-        "e사람": ["e사람", "이사람"], "온나라": ["온나라"],
-        "e호조": ["e호조", "이호조", "예산", "지출"],
+        "e사람": ["e사람"], "온나라": ["온나라"], "e호조": ["e호조"],
         "법령": ["법", "법령"], "조례": ["조례"]
     }
-    
     for category, keywords in categories.items():
         if any(keyword in q for keyword in keywords):
             return category
     return "기타"
-# ========================================
-# 로그인 페이지
-# ========================================
+
+# ========== 로그인 페이지 ==========
 def login_page():
     col1, col2, col3 = st.columns([1, 2, 1])
     
     with col2:
-        st.image("/mnt/user-data/outputs/chungnam_logo.png", width=300)
+        try:
+            st.image("./chungnam_logo.png", width=300)
+        except:
+            st.markdown("🚒 **충남119**")
         
         st.markdown(f"""
         <div style="text-align: center; padding: 20px 0;">
@@ -206,17 +195,14 @@ def login_page():
         
         with tab1:
             st.markdown("### 로그인")
-            login_id = st.text_input("아이디", key="login_id", placeholder="아이디 입력")
-            login_pw = st.text_input("비밀번호", type="password", key="login_pw", placeholder="비밀번호 입력")
+            login_id = st.text_input("아이디", key="login_id")
+            login_pw = st.text_input("비밀번호", type="password", key="login_pw")
             
             if st.button("로그인", use_container_width=True):
                 if not login_id or not login_pw:
                     st.error("아이디와 비밀번호를 입력하세요.")
                 elif login_id in st.session_state.users:
-                    stored_hash = st.session_state.users[login_id]["password_hash"]
-                    input_hash = hash_password(login_pw)
-                    
-                    if stored_hash == input_hash:
+                    if st.session_state.users[login_id]["password_hash"] == hash_password(login_pw):
                         st.session_state.login_user = login_id
                         st.success("로그인 성공!")
                         st.rerun()
@@ -227,8 +213,8 @@ def login_page():
         
         with tab2:
             st.markdown("### 회원가입")
-            signup_id = st.text_input("새 아이디", key="signup_id", placeholder="6자 이상")
-            signup_pw = st.text_input("새 비밀번호", type="password", key="signup_pw", placeholder="6자 이상")
+            signup_id = st.text_input("새 아이디", key="signup_id")
+            signup_pw = st.text_input("새 비밀번호", type="password", key="signup_pw")
             
             if st.button("회원가입", use_container_width=True):
                 if not signup_id or not signup_pw:
@@ -245,9 +231,8 @@ def login_page():
                         "created_at": datetime.now().strftime("%Y-%m-%d")
                     }
                     st.success("회원가입이 완료되었습니다. 로그인해주세요.")
-# ========================================
-# 홈 페이지
-# ========================================
+
+# ========== 홈 페이지 ==========
 def home_page():
     col1, col2 = st.columns([3, 1])
     
@@ -277,13 +262,6 @@ def home_page():
                 <p>🔄 현재 <strong>Gemini API 연동 작업 중</strong>입니다.<br>다음 업데이트에서 실시간 AI 답변이 제공될 예정입니다.</p>
             </div>
             """, unsafe_allow_html=True)
-            
-            st.markdown(f"""
-            <div class="info-box">
-                <div class="info-box-title">📚 관련 법령</div>
-                <p>• 공무원 복무규정<br>• 지방공무원 복무규정<br>• 충청남도 공무원 복무 조례</p>
-            </div>
-            """, unsafe_allow_html=True)
     
     with col2:
         st.markdown(f"""
@@ -297,39 +275,35 @@ def home_page():
                 st.markdown(f"#{i} {name} ({count})")
         
         st.markdown("</div>", unsafe_allow_html=True)
-# ========================================
-# 법령·조례 페이지
-# ========================================
+
+# ========== 법령·조례 페이지 ==========
 def law_page():
     st.markdown(f"""
     <div class="info-box">
         <div class="info-box-title">📚 법령·조례·매뉴얼</div>
-        <p>현재 시스템이 참고하는 공식 자료들입니다.</p>
+        <p>현재 승인된 자료들입니다.</p>
     </div>
     """, unsafe_allow_html=True)
     
-    data = {
-        "구분": ["법령", "법령", "조례", "매뉴얼", "매뉴얼", "매뉴얼"],
-        "자료명": [
-            "공무원 복무규정",
-            "지방공무원 복무규정",
-            "충청남도 공무원 복무 조례",
-            "e사람 시스템 매뉴얼",
-            "온나라 시스템 매뉴얼",
-            "e호조 시스템 매뉴얼"
-        ],
-        "상태": ["📋 준비중"] * 6
-    }
-    
-    st.dataframe(data, use_container_width=True, hide_index=True)
-# ========================================
-# 건의사항 페이지
-# ========================================
+    if not st.session_state.resources:
+        st.info("등록된 자료가 없습니다.")
+    else:
+        for resource in st.session_state.resources:
+            st.markdown(f"""
+            <div class="info-box">
+                <strong>{resource['name']}</strong><br>
+                <span style="color: {TEXT_GRAY}; font-size: 13px;">
+                    {resource['category']} | 등록일: {resource['date']}
+                </span>
+            </div>
+            """, unsafe_allow_html=True)
+
+# ========== 건의·신청 페이지 ==========
 def suggestion_page():
     st.markdown(f"""
     <div class="info-box">
         <div class="info-box-title">💬 자료 신청</div>
-        <p>필요한 법령, 조례, 매뉴얼을 신청하실 수 있습니다.</p>
+        <p>필요한 자료를 신청하실 수 있습니다.</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -374,66 +348,106 @@ def suggestion_page():
                 <span style="color: {TEXT_GRAY}; font-size: 13px;">
                     {item['category']} | {item['file_name']} | {item['date']}
                 </span><br>
-                <span class="badge badge-{'approved' if item['status'] == '승인완료' else 'pending' if item['status'] == '승인대기' else 'rejected'}">
+                <span class="badge badge-approved" style="background: #D4EDDA; color: #155724;" if '{item['status']}' == '승인완료' else ''>
                     {item['status']}
                 </span>
             </div>
             """, unsafe_allow_html=True)
-# ========================================
-# 관리자 페이지
-# ========================================
+
+# ========== 관리자 페이지 ==========
 def admin_page():
-    st.markdown(f"""
-    <div class="info-box">
-        <div class="info-box-title">🔐 자료 신청 관리</div>
-        <p>총 {len(st.session_state.suggestions)}건 중 {len([x for x in st.session_state.suggestions if x['status'] == '승인대기'])}건이 대기 중입니다.</p>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown("### 📋 신청 자료 관리")
     
-    if not st.session_state.suggestions:
-        st.info("신청 자료가 없습니다.")
-        return
+    tab1, tab2 = st.tabs(["신청 관리", "자료 등록"])
     
-    for i, item in enumerate(st.session_state.suggestions):
+    with tab1:
         st.markdown(f"""
         <div class="info-box">
-            <strong>{item['title']}</strong><br>
-            <span style="color: {TEXT_GRAY}; font-size: 13px;">
-                신청자: {item['user']} | {item['category']} | {item['date']}
-            </span><br>
-            <span class="badge badge-{'approved' if item['status'] == '승인완료' else 'pending' if item['status'] == '승인대기' else 'rejected'}">
-                {item['status']}
-            </span>
+            <div class="info-box-title">신청 현황</div>
+            <p>총 {len(st.session_state.suggestions)}건 중 {len([x for x in st.session_state.suggestions if x['status'] == '승인대기'])}건이 대기 중</p>
         </div>
         """, unsafe_allow_html=True)
         
-        col1, col2, col3, col4 = st.columns(4)
+        if not st.session_state.suggestions:
+            st.info("신청 자료가 없습니다.")
+        else:
+            for i, item in enumerate(st.session_state.suggestions):
+                st.markdown(f"""
+                <div class="info-box">
+                    <strong>{item['title']}</strong><br>
+                    <span style="color: {TEXT_GRAY}; font-size: 13px;">
+                        신청자: {item['user']} | {item['category']} | {item['date']}
+                    </span>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    if st.button("✅ 승인", key=f"approve_{i}"):
+                        st.session_state.suggestions[i]["status"] = "승인완료"
+                        # 자료명 추가
+                        st.session_state.resources.append({
+                            "name": item['title'],
+                            "category": item['category'],
+                            "date": datetime.now().strftime("%Y-%m-%d")
+                        })
+                        st.rerun()
+                
+                with col2:
+                    if st.button("❌ 반려", key=f"reject_{i}"):
+                        st.session_state.suggestions[i]["status"] = "반려"
+                        st.rerun()
+                
+                with col3:
+                    if st.button("⏸️ 보류", key=f"hold_{i}"):
+                        st.session_state.suggestions[i]["status"] = "보류"
+                        st.rerun()
+    
+    with tab2:
+        st.markdown("### ➕ 새 자료 등록")
         
-        with col1:
-            if st.button("승인", key=f"approve_{i}", use_container_width=True):
-                st.session_state.suggestions[i]["status"] = "승인완료"
-                st.rerun()
-        with col2:
-            if st.button("반려", key=f"reject_{i}", use_container_width=True):
-                st.session_state.suggestions[i]["status"] = "반려"
-                st.rerun()
-        with col3:
-            if st.button("보류", key=f"hold_{i}", use_container_width=True):
-                st.session_state.suggestions[i]["status"] = "보류"
-                st.rerun()
-        with col4:
-            if st.button("대기", key=f"pending_{i}", use_container_width=True):
-                st.session_state.suggestions[i]["status"] = "승인대기"
-                st.rerun()
-# ========================================
-# 메인 실행
-# ========================================
+        with st.form("add_resource_form", clear_on_submit=True):
+            res_title = st.text_input("자료명")
+            res_category = st.selectbox("자료 종류", ["법령", "조례", "지침", "매뉴얼", "기타"], key="res_cat")
+            
+            if st.form_submit_button("자료 등록", use_container_width=True):
+                if not res_title:
+                    st.error("자료명을 입력하세요.")
+                else:
+                    st.session_state.resources.append({
+                        "name": res_title,
+                        "category": res_category,
+                        "date": datetime.now().strftime("%Y-%m-%d")
+                    })
+                    st.success("자료가 등록되었습니다.")
+        
+        st.markdown("---")
+        st.markdown("### 📚 등록된 자료 목록")
+        
+        if not st.session_state.resources:
+            st.info("등록된 자료가 없습니다.")
+        else:
+            for i, resource in enumerate(st.session_state.resources):
+                col1, col2 = st.columns([4, 1])
+                with col1:
+                    st.markdown(f"**{resource['name']}** ({resource['category']})")
+                with col2:
+                    if st.button("🗑️ 삭제", key=f"delete_res_{i}"):
+                        st.session_state.resources.pop(i)
+                        st.rerun()
+
+# ========== 메인 ==========
 if st.session_state.login_user is None:
     login_page()
 else:
-    # 사이드바 로고
+    # 사이드바
     with st.sidebar:
-        st.image("/mnt/user-data/outputs/chungnam_logo.png", width=200)
+        try:
+            st.image("./chungnam_logo.png", width=200)
+        except:
+            st.markdown("🚒 **충남119**")
+        
         st.markdown("---")
     
     # 헤더
@@ -471,14 +485,13 @@ else:
     
     # 사이드바 사용자 정보
     st.sidebar.markdown("---")
-    user_info = st.session_state.users[st.session_state.login_user]
     st.sidebar.markdown(f"""
     <div class="user-info">
-        <div class="user-info-label">현재 사용자</div>
-        <div class="user-info-value">{st.session_state.login_user}</div>
+        <div style="color: {TEXT_GRAY}; font-size: 12px; font-weight: 600; text-transform: uppercase; margin-bottom: 4px;">현재 사용자</div>
+        <div style="color: {TEXT_DARK}; font-weight: 700; font-size: 15px;">{st.session_state.login_user}</div>
         <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid {BORDER_GRAY};">
-            <div class="user-info-label">권한</div>
-            <div class="user-info-value">{'관리자' if is_admin() else '일반사용자'}</div>
+            <div style="color: {TEXT_GRAY}; font-size: 12px; font-weight: 600; text-transform: uppercase; margin-bottom: 4px;">권한</div>
+            <div style="color: {TEXT_DARK}; font-weight: 700; font-size: 15px;">{'관리자' if is_admin() else '일반사용자'}</div>
         </div>
     </div>
     """, unsafe_allow_html=True)
