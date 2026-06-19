@@ -3,16 +3,17 @@ from datetime import datetime
 from collections import Counter
 import hashlib
 import hmac
+import html
+import json
 import os
 import re
-import html
 from urllib.parse import urlparse
 try:
     import pandas as pd
 except Exception:
     pd = None
 # ============================================================
-# 앱 기본 설정
+# 기본 설정
 # ============================================================
 st.set_page_config(
     page_title="충남119 복무AI",
@@ -20,10 +21,11 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )APP_NAME = "충남119 복무AI"
-APP_VERSION = "v5.0"
-PRIMARY = "#1F6F78"       # 남색 대신 청록 계열
+APP_VERSION = "v5.1 안정화본"
+DATA_FILE = "data_store.json"
+PRIMARY = "#1F6F78"
 PRIMARY_DARK = "#14545C"
-ACCENT = "#F28C6B"        # 질문하기 버튼 포인트 색
+ACCENT = "#F28C6B"
 LIGHT_BG = "#F7F8F5"
 WHITE = "#FFFFFF"
 TEXT_DARK = "#263238"
@@ -62,25 +64,25 @@ SCOPE_LABELS = {
     (r"\b\d{2,4}[-\s]?\d{3,4}[-\s]?\d{4}\b", "전화번호로 보이는 정보"),
     (r"대외비|비공개|보안자료|비밀|수사자료|민감정보|개인정보", "보안·비공개·개인정보 관련 표현"),
 ]# ============================================================
-# 유틸 / 보안 함수
+# 공통 유틸
 # ============================================================
-def h(value) -> str:
+def safe_text(value):
     return html.escape(str(value), quote=True)
-def now_str(fmt: str = "%Y-%m-%d %H:%M:%S") -> str:
+def now_str(fmt="%Y-%m-%d %H:%M:%S"):
     return datetime.now().strftime(fmt)
-def get_secret(name: str, default=None):
+def get_secret(name, default=None):
     try:
         return st.secrets.get(name, default)
     except Exception:
         return default
-def hash_password(password: str, salt: bytes | None = None) -> str:
-    """비밀번호 저장용 PBKDF2 해시. 실서비스에서는 bcrypt/argon2도 권장."""
+def hash_password(password, salt=None):
+    """비밀번호 저장용 PBKDF2 해시. 실서비스에서는 bcrypt/argon2도 가능."""
     if salt is None:
         salt = os.urandom(16)
-    iterations = 260_000
+    iterations = 260000
     digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
-    return f"pbkdf2_sha256${iterations}${salt.hex()}${digest.hex()}"
-def verify_password(password: str, stored_hash: str) -> bool:
+    return "pbkdf2_sha256${}${}${}".format(iterations, salt.hex(), digest.hex())
+def verify_password(password, stored_hash):
     try:
         algorithm, iterations, salt_hex, hash_hex = stored_hash.split("$")
         if algorithm != "pbkdf2_sha256":
@@ -90,40 +92,41 @@ def verify_password(password: str, stored_hash: str) -> bool:
         return hmac.compare_digest(expected, hash_hex)
     except Exception:
         return False
-def valid_url(url: str) -> bool:
+def valid_url(url):
     try:
         parsed = urlparse((url or "").strip())
         return parsed.scheme in ["http", "https"] and bool(parsed.netloc)
     except Exception:
         return False
-def detect_block_reason(text: str) -> str | None:
+def detect_block_reason(text):
     text = text or ""
     for pattern, reason in BLOCK_PATTERNS:
         if re.search(pattern, text, re.IGNORECASE):
             return reason
     return None
-def classify_question(question: str) -> str:
+def classify_question(question):
     q = (question or "").lower()
     for category, keywords in CATEGORY_KEYWORDS.items():
-        if any(keyword.lower() in q for keyword in keywords):
-            return category
+        for keyword in keywords:
+            if keyword.lower() in q:
+                return category
     return "기타"
-def make_question_title(question: str) -> str:
+def make_question_title(question):
     cleaned = " ".join((question or "").split())
     if not cleaned:
         return "제목 없음"
     if len(cleaned) <= 36:
         return cleaned
     return cleaned[:36] + "..."
-def safe_user_id(user_id: str) -> bool:
+def safe_user_id(user_id):
     if not re.match(r"^[A-Za-z0-9_\-]{6,24}$", user_id or ""):
         return False
     if detect_block_reason(user_id):
         return False
     return True
-def scope_label(scope: str) -> str:
+def scope_label(scope):
     return SCOPE_LABELS.get(scope, scope)
-def create_user(password: str, role: str = "user", name: str | None = None) -> dict:
+def create_user(password, role="user", name=None):
     return {
         "password_hash": hash_password(password),
         "role": role,
@@ -133,42 +136,80 @@ def create_user(password: str, role: str = "user", name: str | None = None) -> d
         "terms_accepted_at": "",
         "is_active": True,
     }
-def init_state():
+def default_data():
     default_admin_id = get_secret("ADMIN_ID", "admin119")
     default_admin_pw = get_secret("ADMIN_PASSWORD", "admin1234!")
-    if "users" not in st.session_state:
-        st.session_state.users = {
+    data = {
+        "users": {
             default_admin_id: create_user(default_admin_pw, role="admin", name="최고관리자")
-        }
-        st.session_state.users[default_admin_id]["terms_accepted"] = True
-        st.session_state.users[default_admin_id]["terms_accepted_at"] = now_str()
-        st.session_state.using_default_admin = default_admin_pw == "admin1234!"
-    defaults = {
-        "login_user": None,
-        "menu": "홈",
+        },
         "resources": [],
         "suggestions": [],
         "question_logs": [],
         "admin_requests": [],
         "audit_logs": [],
+        "using_default_admin": default_admin_pw == "admin1234!",
     }
-    for key, value in defaults.items():
-        if key not in st.session_state:
-            st.session_state[key] = value
+    data["users"][default_admin_id]["terms_accepted"] = True
+    data["users"][default_admin_id]["terms_accepted_at"] = now_str()
+    return data
+def load_data():
+    if not os.path.exists(DATA_FILE):
+        return default_data()
+    try:
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            loaded = json.load(f)
+        base = default_data()
+        for key in base:
+            if key not in loaded:
+                loaded[key] = base[key]
+        return loaded
+    except Exception:
+        return default_data()
+def save_data():
+    data = {
+        "users": st.session_state.users,
+        "resources": st.session_state.resources,
+        "suggestions": st.session_state.suggestions,
+        "question_logs": st.session_state.question_logs,
+        "admin_requests": st.session_state.admin_requests,
+        "audit_logs": st.session_state.audit_logs,
+        "using_default_admin": st.session_state.using_default_admin,
+    }
+    try:
+        with open(DATA_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+def init_state():
+    if "_loaded" not in st.session_state:
+        data = load_data()
+        st.session_state.users = data.get("users", {})
+        st.session_state.resources = data.get("resources", [])
+        st.session_state.suggestions = data.get("suggestions", [])
+        st.session_state.question_logs = data.get("question_logs", [])
+        st.session_state.admin_requests = data.get("admin_requests", [])
+        st.session_state.audit_logs = data.get("audit_logs", [])
+        st.session_state.using_default_admin = data.get("using_default_admin", False)
+        st.session_state.login_user = None
+        st.session_state.menu = "홈"
+        st.session_state._loaded = True
 init_state()
 def current_user_id():
-    return st.session_state.login_user
+    return st.session_state.get("login_user")
 def current_user():
     uid = current_user_id()
     if not uid:
         return None
     return st.session_state.users.get(uid)
-def get_role() -> str:
+def get_role():
     user = current_user()
-    return user.get("role", "guest") if user else "guest"
-def is_admin() -> bool:
+    if not user:
+        return "guest"
+    return user.get("role", "guest")
+def is_admin():
     return get_role() == "admin"
-def add_audit(action: str, target: str = "", detail: str = ""):
+def add_audit(action, target="", detail=""):
     st.session_state.audit_logs.append({
         "일시": now_str(),
         "수행자": current_user_id() or "system",
@@ -176,7 +217,8 @@ def add_audit(action: str, target: str = "", detail: str = ""):
         "대상": target,
         "세부내용": detail,
     })
-def can_view_resource(resource: dict) -> bool:
+    save_data()
+def can_view_resource(resource):
     scope = resource.get("공개범위", "Private")
     if scope == "Public":
         return True
@@ -185,11 +227,184 @@ def can_view_resource(resource: dict) -> bool:
     if scope == "Admin":
         return is_admin()
     return False
-def counter_to_dataframe(counter: Counter, name_col="분야", count_col="건수"):
-    rows = [{name_col: key, count_col: count} for key, count in counter.most_common()]
+def to_dataframe(rows):
     if pd is None:
         return rows
     return pd.DataFrame(rows)
+def counter_to_rows(counter, name_col="분야", count_col="건수"):
+    return [{name_col: key, count_col: count} for key, count in counter.most_common()]
+# ============================================================
+# CSS
+# ============================================================
+CSS = """
+<style>
+    * {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Noto Sans KR', sans-serif;
+    }
+    .stApp {
+        background-color: __LIGHT_BG__;
+        color: __TEXT_DARK__;
+    }
+    section[data-testid="stSidebar"] {
+        background: linear-gradient(180deg, __PRIMARY__ 0%, __PRIMARY_DARK__ 100%);
+        min-width: 390px !important;
+        width: 390px !important;
+        overflow-x: hidden !important;
+    }
+    section[data-testid="stSidebar"] > div {
+        width: 390px !important;
+        overflow-x: hidden !important;
+        padding-left: 20px !important;
+        padding-right: 20px !important;
+    }
+    section[data-testid="stSidebar"] * {
+        color: white !important;
+    }
+    section[data-testid="stSidebar"] ::-webkit-scrollbar {
+        width: 0px !important;
+        height: 0px !important;
+    }
+    section[data-testid="stSidebar"] div[data-testid="stRadio"] {
+        width: 100% !important;
+    }
+    section[data-testid="stSidebar"] label[data-baseweb="radio"] {
+        width: 100% !important;
+        padding: 13px 16px !important;
+        border-radius: 12px !important;
+        margin-bottom: 8px !important;
+        background: rgba(255,255,255,0.10) !important;
+    }
+    section[data-testid="stSidebar"] label[data-baseweb="radio"]:hover {
+        background: rgba(255,255,255,0.18) !important;
+    }
+    div[data-testid="collapsedControl"] {
+        z-index: 999999 !important;
+        left: 10px !important;
+        top: 10px !important;
+    }
+    div[data-testid="collapsedControl"] button,
+    button[kind="header"] {
+        width: 56px !important;
+        height: 56px !important;
+        border-radius: 14px !important;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.18) !important;
+        background: __WHITE__ !important;
+    }
+    .hero {
+        background: linear-gradient(135deg, #E6F4F1 0%, #FFFFFF 100%);
+        border: 1px solid __BORDER__;
+        border-radius: 22px;
+        padding: 28px 30px;
+        margin-bottom: 18px;
+        box-shadow: 0 2px 12px rgba(16,24,40,0.05);
+    }
+    .hero-title {
+        font-size: 31px;
+        font-weight: 900;
+        color: __TEXT_DARK__;
+        margin-bottom: 8px;
+    }
+    .hero-sub {
+        font-size: 16px;
+        color: __TEXT_GRAY__;
+        line-height: 1.6;
+    }
+    .card {
+        background: __WHITE__;
+        border: 1px solid __BORDER__;
+        border-radius: 18px;
+        padding: 20px;
+        margin-bottom: 16px;
+        box-shadow: 0 2px 10px rgba(16,24,40,0.04);
+    }
+    .card-title {
+        font-size: 18px;
+        font-weight: 900;
+        color: __TEXT_DARK__;
+        margin-bottom: 8px;
+    }
+    .muted {
+        color: __TEXT_GRAY__;
+        font-size: 13px;
+        line-height: 1.55;
+    }
+    .notice {
+        border-radius: 14px;
+        padding: 14px 16px;
+        margin: 12px 0;
+        line-height: 1.6;
+        font-size: 14px;
+    }
+    .notice.warning {
+        background: #FFF7ED;
+        border: 1px solid #FED7AA;
+        color: #7C2D12;
+    }
+    .notice.info {
+        background: #EFF8FF;
+        border: 1px solid #B2DDFF;
+        color: #184E77;
+    }
+    .notice.danger {
+        background: #FEF3F2;
+        border: 1px solid #FECDCA;
+        color: #7A271A;
+    }
+    .question-wrap {
+        max-width: 920px;
+        margin: 0 auto;
+    }
+    div[data-testid="stTextArea"] textarea {
+        min-height: 210px !important;
+        border-radius: 18px !important;
+        border: 2px solid #B9D7D9 !important;
+        font-size: 18px !important;
+        line-height: 1.6 !important;
+        padding: 20px !important;
+        background: #FFFFFF !important;
+    }
+    div[data-testid="stTextArea"] textarea:focus {
+        border-color: __PRIMARY__ !important;
+        box-shadow: 0 0 0 4px rgba(31,111,120,0.12) !important;
+    }
+    div.stButton > button {
+        border-radius: 12px !important;
+        font-weight: 800 !important;
+        border: 1px solid __BORDER__ !important;
+    }
+    .question-wrap div.stButton > button {
+        background: __ACCENT__ !important;
+        color: white !important;
+        border: 0 !important;
+        height: 54px !important;
+        font-size: 17px !important;
+    }
+    .question-wrap div.stButton > button:hover {
+        background: #E17957 !important;
+        color: white !important;
+    }
+    .sidebar-box {
+        background: rgba(255,255,255,0.12);
+        border: 1px solid rgba(255,255,255,0.20);
+        padding: 13px;
+        border-radius: 15px;
+        margin: 12px 0;
+    }
+</style>
+"""
+CSS = (
+    CSS.replace("__LIGHT_BG__", LIGHT_BG)
+    .replace("__TEXT_DARK__", TEXT_DARK)
+    .replace("__TEXT_GRAY__", TEXT_GRAY)
+    .replace("__PRIMARY__", PRIMARY)
+    .replace("__PRIMARY_DARK__", PRIMARY_DARK)
+    .replace("__WHITE__", WHITE)
+    .replace("__BORDER__", BORDER)
+    .replace("__ACCENT__", ACCENT)
+)st.markdown(CSS, unsafe_allow_html=True)
+# ============================================================
+# 공통 표시
+# ============================================================
 def render_ai_disclaimer():
     st.markdown(
         """
@@ -217,133 +432,37 @@ def render_terms_text():
         """,
         unsafe_allow_html=True,
     )
+def page_header(title, subtitle=""):
+    st.markdown(
+        """
+        <div class="hero">
+            <div class="hero-title">{}</div>
+            <div class="hero-sub">{}</div>
+        </div>
+        """.format(safe_text(title), safe_text(subtitle)),
+        unsafe_allow_html=True,
+    )
 # ============================================================
-# CSS
-# ============================================================
-st.markdown(
-    f"""
-    <style>
-        * {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Noto Sans KR', sans-serif;
-        }}
-        .stApp {{ background-color: {LIGHT_BG}; color: {TEXT_DARK}; }}
-        /* 사이드바 폭/접힘 버튼/스크롤 개선 */
-        section[data-testid="stSidebar"] {{
-            background: linear-gradient(180deg, {PRIMARY} 0%, {PRIMARY_DARK} 100%);
-            min-width: 390px !important;
-            width: 390px !important;
-            overflow-x: hidden !important;
-        }}
-        section[data-testid="stSidebar"] > div {{
-            width: 390px !important;
-            overflow-x: hidden !important;
-            padding-left: 20px !important;
-            padding-right: 20px !important;
-        }}
-        section[data-testid="stSidebar"] * {{ color: white !important; }}
-        section[data-testid="stSidebar"] ::-webkit-scrollbar {{ width: 0px !important; height: 0px !important; }}
-        section[data-testid="stSidebar"] div[data-testid="stRadio"] {{ width: 100% !important; }}
-        section[data-testid="stSidebar"] label[data-baseweb="radio"] {{
-            width: 100% !important;
-            padding: 13px 16px !important;
-            border-radius: 12px !important;
-            margin-bottom: 8px !important;
-            background: rgba(255,255,255,0.10) !important;
-        }}
-        section[data-testid="stSidebar"] label[data-baseweb="radio"]:hover {{
-            background: rgba(255,255,255,0.18) !important;
-        }}
-        div[data-testid="collapsedControl"] {{
-            z-index: 999999 !important;
-            left: 10px !important;
-            top: 10px !important;
-        }}
-        div[data-testid="collapsedControl"] button,
-        button[kind="header"] {{
-            width: 56px !important;
-            height: 56px !important;
-            border-radius: 14px !important;
-            box-shadow: 0 4px 16px rgba(0,0,0,0.18) !important;
-            background: {WHITE} !important;
-        }}
-        .hero {{
-            background: linear-gradient(135deg, #E6F4F1 0%, #FFFFFF 100%);
-            border: 1px solid {BORDER}; border-radius: 22px;
-            padding: 28px 30px; margin-bottom: 18px;
-            box-shadow: 0 2px 12px rgba(16,24,40,0.05);
-        }}
-        .hero-title {{ font-size: 31px; font-weight: 900; color: {TEXT_DARK}; margin-bottom: 8px; }}
-        .hero-sub {{ font-size: 16px; color: {TEXT_GRAY}; line-height: 1.6; }}
-        .card {{
-            background: {WHITE}; border: 1px solid {BORDER}; border-radius: 18px;
-            padding: 20px; margin-bottom: 16px;
-            box-shadow: 0 2px 10px rgba(16,24,40,0.04);
-        }}
-        .card-title {{ font-size: 18px; font-weight: 900; color: {TEXT_DARK}; margin-bottom: 8px; }}
-        .muted {{ color: {TEXT_GRAY}; font-size: 13px; line-height: 1.55; }}
-        .badge {{ display:inline-block; padding:5px 10px; border-radius:999px; font-size:12px; font-weight:800; }}
-        .notice {{ border-radius: 14px; padding: 14px 16px; margin: 12px 0; line-height: 1.6; font-size: 14px; }}
-        .notice.warning {{ background:#FFF7ED; border:1px solid #FED7AA; color:#7C2D12; }}
-        .notice.info {{ background:#EFF8FF; border:1px solid #B2DDFF; color:#184E77; }}
-        .notice.danger {{ background:#FEF3F2; border:1px solid #FECDCA; color:#7A271A; }}
-        .question-wrap {{ max-width: 920px; margin: 0 auto; }}
-        div[data-testid="stTextArea"] textarea {{
-            min-height: 210px !important;
-            border-radius: 18px !important;
-            border: 2px solid #B9D7D9 !important;
-            font-size: 18px !important;
-            line-height: 1.6 !important;
-            padding: 20px !important;
-            background: #FFFFFF !important;
-        }}
-        div[data-testid="stTextArea"] textarea:focus {{
-            border-color: {PRIMARY} !important;
-            box-shadow: 0 0 0 4px rgba(31,111,120,0.12) !important;
-        }}
-        div.stButton > button {{
-            border-radius: 12px !important;
-            font-weight: 800 !important;
-            border: 1px solid {BORDER} !important;
-        }}
-        .question-wrap div.stButton > button {{
-            background: {ACCENT} !important;
-            color: white !important;
-            border: 0 !important;
-            height: 54px !important;
-            font-size: 17px !important;
-        }}
-        .question-wrap div.stButton > button:hover {{
-            background: #E17957 !important;
-            color: white !important;
-        }}
-        .sidebar-box {{
-            background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.20);
-            padding: 13px; border-radius: 15px; margin: 12px 0;
-        }}
-    </style>
-    """,
-    unsafe_allow_html=True,
-)# ============================================================
-# 로그인 / 회원가입 / 동의 화면
+# 로그인 / 회원가입
 # ============================================================
 def login_page():
     c1, c2, c3 = st.columns([1, 1.5, 1])
     with c2:
         st.markdown(
-            f"""
+            """
             <div class="hero" style="text-align:center;">
                 <div style="font-size:52px;">🚒</div>
-                <div class="hero-title">{APP_NAME}</div>
+                <div class="hero-title">{}</div>
                 <div class="hero-sub">
                     현장과 행정을 연결하는 업무 참고 시스템<br>
                     복무·법령·조례·행정자료를 더 빠르게 찾기 위한 AI 보조 도구
                 </div>
             </div>
-            """,
+            """.format(APP_NAME),
             unsafe_allow_html=True,
         )
         if st.session_state.get("using_default_admin"):
-            st.warning("배포 전 Streamlit secrets에 ADMIN_ID, ADMIN_PASSWORD를 반드시 설정하세요. 현재 기본 테스트 관리자 비밀번호가 적용될 수 있습니다.")
+            st.warning("배포 전 Streamlit secrets에 ADMIN_ID, ADMIN_PASSWORD를 반드시 설정하세요. 현재 기본 테스트 관리자 비밀번호가 적용됩니다.")
         tab_login, tab_signup = st.tabs(["로그인", "회원가입"])
         with tab_login:
             login_id = st.text_input("아이디", key="login_id")
@@ -372,9 +491,9 @@ def login_page():
             agree_2 = st.checkbox("본 서비스가 공식 판단이 아닌 업무 참고용 AI 보조 도구임을 확인했습니다.", key="signup_agree_2")
             agree_3 = st.checkbox("운영자와 관리자가 AI 답변 및 등록 자료의 정확성·최신성·적법성을 보증하지 않음을 확인했습니다.", key="signup_agree_3")
             agree_4 = st.checkbox("최종 업무처리 책임은 사용자와 소속 기관에 있음을 확인했습니다.", key="signup_agree_4")
-            disagree = st.radio("위 내용에 동의하십니까?", ["동의", "비동의"], horizontal=True, key="signup_agree_radio")
+            agree_radio = st.radio("위 내용에 동의하십니까?", ["동의", "비동의"], horizontal=True, key="signup_agree_radio")
             if st.button("회원가입", use_container_width=True):
-                if disagree != "동의":
+                if agree_radio != "동의":
                     st.error("비동의 시 회원가입 및 서비스 이용이 불가합니다.")
                 elif not all([agree_1, agree_2, agree_3, agree_4]):
                     st.error("필수 확인사항을 모두 체크해야 회원가입할 수 있습니다.")
@@ -392,6 +511,7 @@ def login_page():
                     st.session_state.users[sid] = create_user(spw, role="user", name=sid)
                     st.session_state.users[sid]["terms_accepted"] = True
                     st.session_state.users[sid]["terms_accepted_at"] = now_str()
+                    save_data()
                     add_audit("회원가입", sid, "동의 완료")
                     st.success("회원가입이 완료되었습니다. 로그인하세요.")
 def terms_gate_page():
@@ -411,6 +531,7 @@ def terms_gate_page():
                 uid = current_user_id()
                 st.session_state.users[uid]["terms_accepted"] = True
                 st.session_state.users[uid]["terms_accepted_at"] = now_str()
+                save_data()
                 add_audit("이용약관 동의", uid)
                 st.rerun()
     with col2:
@@ -419,30 +540,47 @@ def terms_gate_page():
             st.session_state.login_user = None
             st.rerun()
 # ============================================================
-# 사이드바 / 공통 화면
+# 사이드바 / 페이지
 # ============================================================
 def sidebar():
     with st.sidebar:
         st.markdown(
-            f"""
-            <div style="font-size:28px;font-weight:900;margin-bottom:4px;">🚒 {APP_NAME}</div>
-            <div style="font-size:13px;opacity:.85;margin-bottom:14px;">{APP_VERSION} · 업무 참고용</div>
+            """
+            <div style="font-size:28px;font-weight:900;margin-bottom:4px;">🚒 {}</div>
+            <div style="font-size:13px;opacity:.85;margin-bottom:14px;">{} · 업무 참고용</div>
             <div class="sidebar-box">
-                <b>이용자</b><br>{h(current_user_id())}<br>
-                <span style="font-size:12px;opacity:.85;">권한: {h(get_role())}</span>
+                <b>운영 원칙</b><br>
+                <span style="font-size:13px;line-height:1.6;">
+                파일 업로드 금지 · 공식 출처 확인 · 최종 판단은 소속 기관 기준
+                </span>
             </div>
-            """,
+            <div class="sidebar-box">
+                <b>현재 사용자</b><br>{}<br>
+                <span style="font-size:12px;opacity:.85;">권한: {}</span>
+            </div>
+            """.format(APP_NAME, APP_VERSION, safe_text(current_user_id()), safe_text(get_role())),
             unsafe_allow_html=True,
         )
         menus = ["홈", "질문하기", "법령·조례 자료", "자료 등록 요청"]
         if is_admin():
             menus.append("관리자")
-        st.session_state.menu = st.radio("메뉴", menus, index=menus.index(st.session_state.menu) if st.session_state.menu in menus else 0)
+        current_menu = st.session_state.get("menu", "홈")
+        if current_menu not in menus:
+            current_menu = "홈"
+        st.session_state.menu = st.radio("메뉴", menus, index=menus.index(current_menu))
         st.markdown("---")
-        st.markdown("<div class='sidebar-box'><b>관리자 권한신청</b><br><span style='font-size:12px;'>업무상 필요 시 신청하세요.</span></div>", unsafe_allow_html=True)
+        st.markdown(
+            """
+            <div class="sidebar-box">
+                <b>관리자 권한신청</b><br>
+                <span style="font-size:12px;">업무상 필요 시 신청하세요.</span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
         if st.button("관리자 권한 신청", use_container_width=True):
             uid = current_user_id()
-            exists = any(req["아이디"] == uid and req["상태"] == "신청대기" for req in st.session_state.admin_requests)
+            exists = any(req.get("아이디") == uid and req.get("상태") == "신청대기" for req in st.session_state.admin_requests)
             if is_admin():
                 st.info("이미 관리자 권한입니다.")
             elif exists:
@@ -455,22 +593,13 @@ def sidebar():
                     "처리일시": "",
                     "처리자": "",
                 })
+                save_data()
                 add_audit("관리자 권한 신청", uid)
                 st.success("관리자 권한 신청이 접수되었습니다.")
         if st.button("로그아웃", use_container_width=True):
             add_audit("로그아웃", current_user_id())
             st.session_state.login_user = None
             st.rerun()
-def page_header(title: str, subtitle: str = ""):
-    st.markdown(
-        f"""
-        <div class="hero">
-            <div class="hero-title">{h(title)}</div>
-            <div class="hero-sub">{h(subtitle)}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
 def home_page():
     page_header(
         "현장과 행정을 연결하는 복무 참고 시스템",
@@ -495,13 +624,13 @@ def home_page():
         for idx, (category, count) in enumerate(top5):
             with cols[idx]:
                 st.markdown(
-                    f"""
+                    """
                     <div class="card" style="text-align:center;">
-                        <div style="font-size:22px;font-weight:900;color:{PRIMARY};">{idx + 1}</div>
-                        <div class="card-title">{h(category)}</div>
-                        <div class="muted">{count}건</div>
+                        <div style="font-size:22px;font-weight:900;color:{};">{}</div>
+                        <div class="card-title">{}</div>
+                        <div class="muted">{}건</div>
                     </div>
-                    """,
+                    """.format(PRIMARY, idx + 1, safe_text(category), count),
                     unsafe_allow_html=True,
                 )
     st.markdown("### 이용 안내")
@@ -525,7 +654,7 @@ def ask_page():
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         ask_clicked = st.button("질문하기", use_container_width=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
     if ask_clicked:
         if not question.strip():
             st.warning("질문을 입력하세요.")
@@ -543,8 +672,9 @@ def ask_page():
                 "상태": "자동차단",
                 "차단사유": block_reason,
             })
+            save_data()
             add_audit("질문 자동차단", current_user_id(), block_reason)
-            st.error(f"질문에 {block_reason}가 포함된 것으로 감지되어 처리하지 않았습니다. 해당 정보를 제거하고 다시 질문하세요.")
+            st.error("질문에 {}가 포함된 것으로 감지되어 처리하지 않았습니다. 해당 정보를 제거하고 다시 질문하세요.".format(block_reason))
             return
         st.session_state.question_logs.append({
             "일시": now_str(),
@@ -555,13 +685,11 @@ def ask_page():
             "상태": "정상",
             "차단사유": "",
         })
-        add_audit("질문 등록", current_user_id(), f"{category} / {title}")
-        st.markdown("### AI 답변 예시")
-        st.info(
-            "현재 코드는 화면·권한·기록 구조를 잡은 버전입니다. 실제 Gemini/OpenAI API 연동은 이 위치에 연결하면 됩니다. "
-            "답변 생성 시에는 등록 자료의 출처 URL, 등록일, 공개범위, 면책문구를 함께 표시하도록 구성하세요."
-        )
-        st.markdown(f"**분류된 질문 분야:** {category}")
+        save_data()
+        add_audit("질문 등록", current_user_id(), "{} / {}".format(category, title))
+        st.markdown("### AI 답변 영역")
+        st.info("현재 버전은 화면·권한·기록 구조를 잡은 안정화본입니다. 실제 Gemini/OpenAI API 연동은 이 위치에 연결하면 됩니다.")
+        st.markdown("**분류된 질문 분야:** {}".format(safe_text(category)))
         render_ai_disclaimer()
 def resources_page():
     page_header("법령·조례 자료", "자료명, 발행기관, 공식 출처 URL, 등록일, 최종 확인일을 함께 표시합니다.")
@@ -571,16 +699,25 @@ def resources_page():
         return
     for idx, r in enumerate(visible, start=1):
         st.markdown(
-            f"""
+            """
             <div class="card">
-                <div class="card-title">{idx}. {h(r.get('자료명', ''))}</div>
+                <div class="card-title">{}. {}</div>
                 <div class="muted">
-                    분야: {h(r.get('분야', ''))} · 발행기관: {h(r.get('발행기관', ''))}<br>
-                    등록일: {h(r.get('등록일', ''))} · 최종 확인일: {h(r.get('최종확인일', ''))} · 공개범위: {h(scope_label(r.get('공개범위', 'Private')))}<br>
-                    출처 URL: {h(r.get('출처URL', ''))}
+                    분야: {} · 발행기관: {}<br>
+                    등록일: {} · 최종 확인일: {} · 공개범위: {}<br>
+                    출처 URL: {}
                 </div>
             </div>
-            """,
+            """.format(
+                idx,
+                safe_text(r.get("자료명", "")),
+                safe_text(r.get("분야", "")),
+                safe_text(r.get("발행기관", "")),
+                safe_text(r.get("등록일", "")),
+                safe_text(r.get("최종확인일", "")),
+                safe_text(scope_label(r.get("공개범위", "Private"))),
+                safe_text(r.get("출처URL", "")),
+            ),
             unsafe_allow_html=True,
         )
 def suggestion_page():
@@ -602,7 +739,7 @@ def suggestion_page():
         reason = st.text_area("등록 요청 사유", placeholder="왜 필요한 자료인지 간단히 작성하세요. 개인정보·민감정보는 입력하지 마세요.")
         submitted = st.form_submit_button("자료 등록 요청")
     if submitted:
-        combined = f"{name}\n{publisher}\n{source_url}\n{reason}"
+        combined = "{}\n{}\n{}\n{}".format(name, publisher, source_url, reason)
         block_reason = detect_block_reason(combined)
         if not name or not publisher or not source_url or not reason:
             st.warning("모든 항목을 입력하세요.")
@@ -620,8 +757,9 @@ def suggestion_page():
                 "상태": "자동차단",
                 "차단사유": block_reason,
             })
+            save_data()
             add_audit("자료 요청 자동차단", current_user_id(), block_reason)
-            st.error(f"{block_reason}가 포함된 것으로 감지되어 관리자 검토 없이 차단했습니다.")
+            st.error("{}가 포함된 것으로 감지되어 관리자 검토 없이 차단했습니다.".format(block_reason))
         else:
             st.session_state.suggestions.append({
                 "요청일시": now_str(),
@@ -634,8 +772,12 @@ def suggestion_page():
                 "상태": "출처확인대기",
                 "차단사유": "",
             })
+            save_data()
             add_audit("자료 등록 요청", current_user_id(), name)
             st.success("자료 등록 요청이 접수되었습니다. 관리자는 공식 출처 존재 여부와 공개 가능 여부만 확인합니다.")
+# ============================================================
+# 관리자 기능
+# ============================================================
 def admin_dashboard_tab():
     st.markdown("### 관리자 통계")
     active_users = [uid for uid, u in st.session_state.users.items() if u.get("is_active", True)]
@@ -651,17 +793,25 @@ def admin_dashboard_tab():
     with left:
         st.markdown("#### 질문 분야 비율")
         if category_counts:
-            df = counter_to_dataframe(category_counts, "분야", "건수")
-            st.bar_chart(df.set_index("분야") if pd is not None else category_counts)
-            st.dataframe(df, use_container_width=True)
+            rows = counter_to_rows(category_counts, "분야", "건수")
+            df = to_dataframe(rows)
+            if pd is not None:
+                st.bar_chart(df.set_index("분야"))
+                st.dataframe(df, use_container_width=True)
+            else:
+                st.write(rows)
         else:
             st.info("질문 통계가 없습니다.")
     with right:
         st.markdown("#### 비슷한 질문 소제목 TOP")
         if title_counts:
-            df2 = counter_to_dataframe(title_counts, "소제목", "건수")
-            st.bar_chart(df2.set_index("소제목") if pd is not None else title_counts)
-            st.dataframe(df2, use_container_width=True)
+            rows2 = counter_to_rows(title_counts, "소제목", "건수")
+            df2 = to_dataframe(rows2)
+            if pd is not None:
+                st.bar_chart(df2.set_index("소제목"))
+                st.dataframe(df2, use_container_width=True)
+            else:
+                st.write(rows2)
         else:
             st.info("소제목 통계가 없습니다.")
 def admin_questions_tab():
@@ -670,48 +820,53 @@ def admin_questions_tab():
     if not st.session_state.question_logs:
         st.info("질문 이력이 없습니다.")
         return
+    df = to_dataframe(st.session_state.question_logs)
     if pd is not None:
-        st.dataframe(pd.DataFrame(st.session_state.question_logs), use_container_width=True)
+        st.dataframe(df, use_container_width=True)
     else:
-        st.write(st.session_state.question_logs)
+        st.write(df)
     with st.expander("질문 이력 삭제"):
-        st.warning("삭제하면 현재 세션의 질문 이력이 사라집니다. 실제 DB 사용 시에는 감사로그와 별도 보존 정책을 두세요.")
+        st.warning("삭제하면 현재 저장소의 질문 이력이 사라집니다. 실제 운영에서는 감사로그와 보존 정책을 별도로 두세요.")
         if st.button("전체 질문 이력 삭제"):
             st.session_state.question_logs = []
+            save_data()
             add_audit("질문 이력 전체 삭제")
             st.success("질문 이력을 삭제했습니다.")
             st.rerun()
 def admin_suggestions_tab():
     st.markdown("### 자료 등록 요청 관리")
-    pending = [s for s in st.session_state.suggestions if s.get("상태") == "출처확인대기"]
-    blocked = [s for s in st.session_state.suggestions if s.get("상태") == "자동차단"]
     st.info("관리자는 자료의 정확성·최신성·법적 적법성을 보증하지 않고, 공식 출처 존재 여부와 공개 가능 여부만 확인합니다.")
     if not st.session_state.suggestions:
         st.info("자료 등록 요청이 없습니다.")
         return
+    blocked = [s for s in st.session_state.suggestions if s.get("상태") == "자동차단"]
     if blocked:
-        with st.expander(f"자동차단 요청 {len(blocked)}건"):
-            st.dataframe(pd.DataFrame(blocked), use_container_width=True) if pd is not None else st.write(blocked)
+        with st.expander("자동차단 요청 {}건".format(len(blocked))):
+            df_blocked = to_dataframe(blocked)
+            if pd is not None:
+                st.dataframe(df_blocked, use_container_width=True)
+            else:
+                st.write(df_blocked)
     for i, item in enumerate(st.session_state.suggestions):
         if item.get("상태") != "출처확인대기":
             continue
-        with st.expander(f"{item.get('자료명')} / {item.get('요청자')} / {item.get('요청일시')}"):
-            st.write(f"분야: {item.get('분야')}")
-            st.write(f"발행기관: {item.get('발행기관')}")
-            st.write(f"출처 URL: {item.get('출처URL')}")
-            st.write(f"요청 사유: {item.get('요청사유')}")
+        with st.expander("{} / {} / {}".format(item.get("자료명"), item.get("요청자"), item.get("요청일시"))):
+            st.write("분야: {}".format(item.get("분야")))
+            st.write("발행기관: {}".format(item.get("발행기관")))
+            st.write("출처 URL: {}".format(item.get("출처URL")))
+            st.write("요청 사유: {}".format(item.get("요청사유")))
             c1, c2, c3 = st.columns(3)
             with c1:
-                official = st.checkbox("공식 출처 존재 확인", key=f"official_{i}")
+                official = st.checkbox("공식 출처 존재 확인", key="official_{}".format(i))
             with c2:
-                public_ok = st.checkbox("공개 가능 자료 확인", key=f"public_{i}")
+                public_ok = st.checkbox("공개 가능 자료 확인", key="public_{}".format(i))
             with c3:
-                not_secret = st.checkbox("보안자료 아님 확인", key=f"secret_{i}")
-            scope = st.selectbox("공개범위", RESOURCE_SCOPES, index=0, format_func=scope_label, key=f"scope_{i}")
-            reviewer_note = st.text_input("관리자 메모", key=f"memo_{i}")
+                not_secret = st.checkbox("보안자료 아님 확인", key="secret_{}".format(i))
+            scope = st.selectbox("공개범위", RESOURCE_SCOPES, index=0, format_func=scope_label, key="scope_{}".format(i))
+            reviewer_note = st.text_input("관리자 메모", key="memo_{}".format(i))
             b1, b2, b3 = st.columns(3)
             with b1:
-                if st.button("승인", key=f"approve_{i}"):
+                if st.button("승인", key="approve_{}".format(i)):
                     if not all([official, public_ok, not_secret]):
                         st.error("세 가지 확인사항을 모두 체크해야 승인할 수 있습니다.")
                     else:
@@ -729,21 +884,24 @@ def admin_suggestions_tab():
                         st.session_state.suggestions[i]["상태"] = "승인완료"
                         st.session_state.suggestions[i]["처리일시"] = now_str()
                         st.session_state.suggestions[i]["처리자"] = current_user_id()
-                        add_audit("자료 요청 승인", item.get("자료명"), f"scope={scope}")
+                        save_data()
+                        add_audit("자료 요청 승인", item.get("자료명"), "scope={}".format(scope))
                         st.success("승인 및 자료 등록 완료")
                         st.rerun()
             with b2:
-                if st.button("반려", key=f"reject_{i}"):
+                if st.button("반려", key="reject_{}".format(i)):
                     st.session_state.suggestions[i]["상태"] = "반려"
                     st.session_state.suggestions[i]["처리일시"] = now_str()
                     st.session_state.suggestions[i]["처리자"] = current_user_id()
+                    save_data()
                     add_audit("자료 요청 반려", item.get("자료명"))
                     st.rerun()
             with b3:
-                if st.button("등록 금지", key=f"prohibit_{i}"):
+                if st.button("등록 금지", key="prohibit_{}".format(i)):
                     st.session_state.suggestions[i]["상태"] = "등록금지"
                     st.session_state.suggestions[i]["처리일시"] = now_str()
                     st.session_state.suggestions[i]["처리자"] = current_user_id()
+                    save_data()
                     add_audit("자료 요청 등록금지", item.get("자료명"))
                     st.rerun()
 def admin_resource_register_tab():
@@ -759,14 +917,14 @@ def admin_resource_register_tab():
         memo = st.text_area("관리자 메모", key="admin_res_memo")
         submitted = st.form_submit_button("자료 등록")
     if submitted:
-        combined = f"{name}\n{publisher}\n{url}\n{memo}"
+        combined = "{}\n{}\n{}\n{}".format(name, publisher, url, memo)
         block_reason = detect_block_reason(combined)
         if not name or not publisher or not url:
             st.warning("자료명, 발행기관, 출처 URL을 입력하세요.")
         elif not valid_url(url):
             st.error("URL 형식이 올바르지 않습니다.")
         elif block_reason:
-            st.error(f"{block_reason}가 포함된 것으로 감지되어 등록할 수 없습니다.")
+            st.error("{}가 포함된 것으로 감지되어 등록할 수 없습니다.".format(block_reason))
             add_audit("관리자 자료 등록 차단", name, block_reason)
         else:
             st.session_state.resources.append({
@@ -780,19 +938,28 @@ def admin_resource_register_tab():
                 "등록자": current_user_id(),
                 "관리자메모": memo,
             })
-            add_audit("관리자 직접 자료 등록", name, f"scope={scope}")
+            save_data()
+            add_audit("관리자 직접 자료 등록", name, "scope={}".format(scope))
             st.success("자료가 등록되었습니다.")
     st.markdown("#### 등록 자료 목록")
     if st.session_state.resources:
-        st.dataframe(pd.DataFrame(st.session_state.resources), use_container_width=True) if pd is not None else st.write(st.session_state.resources)
+        df = to_dataframe(st.session_state.resources)
+        if pd is not None:
+            st.dataframe(df, use_container_width=True)
+        else:
+            st.write(df)
     else:
         st.info("등록 자료가 없습니다.")
 def admin_users_tab():
     st.markdown("### 회원·권한 관리")
     st.markdown("#### 관리자 권한 신청")
     if st.session_state.admin_requests:
-        st.dataframe(pd.DataFrame(st.session_state.admin_requests), use_container_width=True) if pd is not None else st.write(st.session_state.admin_requests)
-        pending_ids = [r["아이디"] for r in st.session_state.admin_requests if r.get("상태") == "신청대기"]
+        df_req = to_dataframe(st.session_state.admin_requests)
+        if pd is not None:
+            st.dataframe(df_req, use_container_width=True)
+        else:
+            st.write(df_req)
+        pending_ids = [r.get("아이디") for r in st.session_state.admin_requests if r.get("상태") == "신청대기"]
         if pending_ids:
             selected_req = st.selectbox("처리할 신청자", pending_ids)
             c1, c2 = st.columns(2)
@@ -800,20 +967,22 @@ def admin_users_tab():
                 if st.button("관리자 승인"):
                     st.session_state.users[selected_req]["role"] = "admin"
                     for r in st.session_state.admin_requests:
-                        if r["아이디"] == selected_req and r["상태"] == "신청대기":
+                        if r.get("아이디") == selected_req and r.get("상태") == "신청대기":
                             r["상태"] = "승인"
                             r["처리일시"] = now_str()
                             r["처리자"] = current_user_id()
+                    save_data()
                     add_audit("관리자 권한 승인", selected_req)
                     st.success("관리자 권한을 부여했습니다.")
                     st.rerun()
             with c2:
                 if st.button("관리자 신청 반려"):
                     for r in st.session_state.admin_requests:
-                        if r["아이디"] == selected_req and r["상태"] == "신청대기":
+                        if r.get("아이디") == selected_req and r.get("상태") == "신청대기":
                             r["상태"] = "반려"
                             r["처리일시"] = now_str()
                             r["처리자"] = current_user_id()
+                    save_data()
                     add_audit("관리자 권한 반려", selected_req)
                     st.rerun()
     else:
@@ -828,7 +997,11 @@ def admin_users_tab():
             "동의일시": user.get("terms_accepted_at"),
             "활성": user.get("is_active", True),
         })
-    st.dataframe(pd.DataFrame(rows), use_container_width=True) if pd is not None else st.write(rows)
+    df_users = to_dataframe(rows)
+    if pd is not None:
+        st.dataframe(df_users, use_container_width=True)
+    else:
+        st.write(df_users)
     st.markdown("#### 가입자 아이디 삭제")
     deletable_ids = [uid for uid in st.session_state.users.keys() if uid != current_user_id()]
     if not deletable_ids:
@@ -838,9 +1011,10 @@ def admin_users_tab():
     confirm = st.text_input("삭제 확인을 위해 아이디를 그대로 입력하세요", key="delete_confirm")
     hard_delete = st.checkbox("완전 삭제하기", value=False, help="체크하지 않으면 비활성화 처리합니다. 실제 운영에서는 비활성화를 권장합니다.")
     if st.button("선택 아이디 삭제/비활성화"):
+        active_admins = [uid for uid, u in st.session_state.users.items() if u.get("role") == "admin" and u.get("is_active", True)]
         if confirm != target:
             st.error("확인 아이디가 일치하지 않습니다.")
-        elif st.session_state.users[target].get("role") == "admin" and len([u for u in st.session_state.users.values() if u.get("role") == "admin" and u.get("is_active", True)]) <= 1:
+        elif st.session_state.users[target].get("role") == "admin" and len(active_admins) <= 1:
             st.error("마지막 관리자 계정은 삭제할 수 없습니다.")
         else:
             if hard_delete:
@@ -849,15 +1023,20 @@ def admin_users_tab():
             else:
                 st.session_state.users[target]["is_active"] = False
                 action = "가입자 비활성화"
+            save_data()
             add_audit(action, target)
-            st.success(f"{target} 처리 완료")
+            st.success("{} 처리 완료".format(target))
             st.rerun()
 def admin_audit_tab():
     st.markdown("### 관리자 감사로그")
     if not st.session_state.audit_logs:
         st.info("감사로그가 없습니다.")
     else:
-        st.dataframe(pd.DataFrame(st.session_state.audit_logs), use_container_width=True) if pd is not None else st.write(st.session_state.audit_logs)
+        df_logs = to_dataframe(st.session_state.audit_logs)
+        if pd is not None:
+            st.dataframe(df_logs, use_container_width=True)
+        else:
+            st.write(df_logs)
 def admin_page():
     if not is_admin():
         st.error("관리자만 접근할 수 있습니다.")
@@ -877,7 +1056,7 @@ def admin_page():
     with tabs[5]:
         admin_audit_tab()
 # ============================================================
-# 앱 실행
+# 실행
 # ============================================================
 def main():
     if not current_user_id():
@@ -892,7 +1071,7 @@ def main():
         terms_gate_page()
         return
     sidebar()
-    menu = st.session_state.menu
+    menu = st.session_state.get("menu", "홈")
     if menu == "홈":
         home_page()
     elif menu == "질문하기":
@@ -903,5 +1082,7 @@ def main():
         suggestion_page()
     elif menu == "관리자":
         admin_page()
+    else:
+        home_page()
 if __name__ == "__main__":
     main()
