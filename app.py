@@ -23,13 +23,13 @@ except Exception:
 # ============================================================
 st.set_page_config(
     page_title="충남119행정비서",
-    page_icon="🚒",
+    page_icon="🔥",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
 APP_NAME = "충남119행정비서"
-APP_VERSION = "v6.0"
+APP_VERSION = "v6.3 권한신청사유·사이드바정리"
 DATA_FILE = "data_store.json"
 AUTO_LOGOUT_SECONDS = 10 * 60
 
@@ -188,9 +188,13 @@ def ensure_admin():
         save_store()
     else:
         users[admin_id]["role"] = "admin"
-        users[admin_id].setdefault("password_hash", admin_hash)
+        # 기존 data_store.json에 같은 아이디가 있어도 관리자 비밀번호를 확정값으로 갱신합니다.
+        # 이전 버전은 setdefault라서 기존 잘못된 비밀번호 해시가 유지될 수 있었습니다.
+        users[admin_id]["password_hash"] = admin_hash
         users[admin_id].setdefault("force_logout_after", "")
-        users[admin_id].setdefault("is_active", True)
+        users[admin_id]["is_active"] = True
+        users[admin_id]["terms_accepted"] = True
+        users[admin_id].setdefault("terms_accepted_at", now_iso())
         save_store()
 
 
@@ -715,10 +719,50 @@ def page_header(title, subtitle="", show_logo=True):
 
 
 def top_logout_area():
-    c1, c2 = st.columns([7, 1.2])
-    with c1:
+    """화면 우측 상단 공통 영역: 일반사용자는 권한신청, 모든 사용자는 로그아웃."""
+    left, right = st.columns([6.5, 1.8])
+    with left:
         pass
-    with c2:
+    with right:
+        if not is_admin():
+            uid = current_user_id()
+            pending_exists = any(
+                r.get("아이디") == uid and r.get("상태") == "신청대기"
+                for r in st.session_state.store["admin_requests"]
+            )
+            if pending_exists:
+                st.caption("관리자 권한 신청: 대기중")
+            else:
+                with st.expander("관리자 권한 신청", expanded=False):
+                    with st.form("admin_request_reason_form", clear_on_submit=True):
+                        reason = st.text_area(
+                            "신청 사유",
+                            placeholder="예: 자료 등록·검토 업무를 담당하여 관리자 권한이 필요합니다.",
+                            height=92,
+                        )
+                        submitted = st.form_submit_button("신청", use_container_width=True)
+                    if submitted:
+                        cleaned = (reason or "").strip()
+                        block_reason = detect_block_reason(cleaned)
+                        if len(cleaned) < 5:
+                            st.warning("신청 사유를 5자 이상 입력하세요.")
+                        elif block_reason:
+                            st.error(f"{block_reason}가 포함된 것으로 감지되어 신청할 수 없습니다.")
+                        else:
+                            st.session_state.store["admin_requests"].append({
+                                "id": new_id("ar"),
+                                "신청일시": now_iso(),
+                                "아이디": uid,
+                                "신청사유": cleaned,
+                                "상태": "신청대기",
+                                "처리일시": "",
+                                "처리자": "",
+                                "처리메모": "",
+                            })
+                            save_store()
+                            add_audit("관리자 권한 신청", uid, cleaned[:80])
+                            st.success("관리자 권한 신청이 접수되었습니다.")
+                            st.rerun()
         if st.button("로그아웃", key="top_logout", use_container_width=True):
             logout("화면 상단 로그아웃")
             st.rerun()
@@ -888,30 +932,20 @@ def sidebar():
             st.session_state.menu = "홈"
         st.session_state.menu = st.radio("메뉴", menu_items, index=menu_items.index(st.session_state.menu))
 
-        st.markdown("<div class='sidebar-box'><div class='label'>세션</div><div class='value'>10분 미사용 시 자동 로그아웃</div></div>", unsafe_allow_html=True)
-
-        if not is_admin():
-            st.markdown("<div class='sidebar-box'><div class='label'>권한</div><div class='value'>관리자 권한 신청</div></div>", unsafe_allow_html=True)
-            if st.button("관리자 권한 신청", use_container_width=True):
-                uid = current_user_id()
-                exists = any(r.get("아이디") == uid and r.get("상태") == "신청대기" for r in st.session_state.store["admin_requests"])
-                if exists:
-                    st.info("이미 신청대기 중입니다.")
-                else:
-                    st.session_state.store["admin_requests"].append({
-                        "신청일시": now_iso(),
-                        "아이디": uid,
-                        "상태": "신청대기",
-                        "처리일시": "",
-                        "처리자": "",
-                    })
-                    save_store()
-                    add_audit("관리자 권한 신청", uid)
-                    st.success("관리자 권한 신청이 접수되었습니다.")
-
-        if st.button("로그아웃", use_container_width=True):
-            logout("사이드바 로그아웃")
-            st.rerun()
+        st.markdown(
+            """
+            <div class='sidebar-box'>
+                <div class='label'>업무 원칙</div>
+                <div class='value'>공식 출처와 담당 부서 최종 확인</div>
+            </div>
+            <div class='sidebar-box'>
+                <div class='label'>입력 금지</div>
+                <div class='value'>개인정보·민감정보·보안자료</div>
+            </div>
+            <div class='sidebar-sub' style='text-align:center; margin-top:14px;'>10분 미사용 시 자동 로그아웃</div>
+            """,
+            unsafe_allow_html=True,
+        )
 
 # ============================================================
 # 사용자 홈: 질문하기 + TOP5 + 내 질문
@@ -1337,37 +1371,70 @@ def admin_users_tab():
     st.markdown("### 회원·권한 관리")
     st.markdown("#### 관리자 권한 신청")
     requests = st.session_state.store["admin_requests"]
+    # 이전 버전에서 생성된 신청 데이터에도 id/신청사유 필드를 보정합니다.
+    changed = False
+    for r in requests:
+        if not r.get("id"):
+            r["id"] = new_id("ar")
+            changed = True
+        if "신청사유" not in r:
+            r["신청사유"] = ""
+            changed = True
+        if "처리메모" not in r:
+            r["처리메모"] = ""
+            changed = True
+    if changed:
+        save_store()
+
     pending = [r for r in requests if r.get("상태") == "신청대기"]
     if requests:
+        cols = ["신청일시", "아이디", "신청사유", "상태", "처리일시", "처리자", "처리메모"]
+        display_rows = [{k: r.get(k, "") for k in cols} for r in requests]
         if pd is not None:
-            st.dataframe(pd.DataFrame(requests), use_container_width=True)
+            st.dataframe(pd.DataFrame(display_rows), use_container_width=True)
         else:
-            st.write(requests)
+            st.write(display_rows)
     else:
         st.info("관리자 권한 신청이 없습니다.")
+
     if pending:
-        selected_req = st.selectbox("처리할 신청자", [r["아이디"] for r in pending])
+        option_map = {
+            f"{r.get('id')} | {r.get('아이디')} | {r.get('신청일시')}": r
+            for r in pending
+        }
+        selected_label = st.selectbox("처리할 신청", list(option_map.keys()))
+        selected_request = option_map[selected_label]
+        st.markdown("##### 신청 상세")
+        st.write(f"신청자: {selected_request.get('아이디', '')}")
+        st.write(f"신청일시: {selected_request.get('신청일시', '')}")
+        st.info(selected_request.get("신청사유", "신청 사유 없음"))
+        process_memo = st.text_input("처리 메모", key=f"admin_req_memo_{selected_request.get('id')}")
         c1, c2 = st.columns(2)
         with c1:
             if st.button("관리자 승인", use_container_width=True):
-                users()[selected_req]["role"] = "admin"
-                for r in requests:
-                    if r.get("아이디") == selected_req and r.get("상태") == "신청대기":
-                        r["상태"] = "승인"
-                        r["처리일시"] = now_iso()
-                        r["처리자"] = current_user_id()
-                save_store()
-                add_audit("관리자 권한 승인", selected_req)
-                st.rerun()
+                target_id = selected_request.get("아이디")
+                if target_id in users():
+                    users()[target_id]["role"] = "admin"
+                    selected_request["상태"] = "승인"
+                    selected_request["처리일시"] = now_iso()
+                    selected_request["처리자"] = current_user_id()
+                    selected_request["처리메모"] = process_memo
+                    save_store()
+                    add_audit("관리자 권한 승인", target_id, selected_request.get("신청사유", "")[:80])
+                    st.success("관리자 권한을 승인했습니다.")
+                    st.rerun()
+                else:
+                    st.error("존재하지 않는 사용자입니다.")
         with c2:
             if st.button("관리자 신청 반려", use_container_width=True):
-                for r in requests:
-                    if r.get("아이디") == selected_req and r.get("상태") == "신청대기":
-                        r["상태"] = "반려"
-                        r["처리일시"] = now_iso()
-                        r["처리자"] = current_user_id()
+                target_id = selected_request.get("아이디")
+                selected_request["상태"] = "반려"
+                selected_request["처리일시"] = now_iso()
+                selected_request["처리자"] = current_user_id()
+                selected_request["처리메모"] = process_memo
                 save_store()
-                add_audit("관리자 권한 반려", selected_req)
+                add_audit("관리자 권한 반려", target_id, process_memo)
+                st.success("관리자 권한 신청을 반려했습니다.")
                 st.rerun()
 
     st.markdown("#### 가입자 목록")
