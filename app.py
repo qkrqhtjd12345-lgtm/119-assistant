@@ -3,7 +3,7 @@ from datetime import datetime
 import hashlib
 st.set_page_config(
     page_title="충남119 복무AI",
-    page_icon="",
+    page_icon="🚒",
     layout="wide",
     initial_sidebar_state="expanded"
 )# ========================================
