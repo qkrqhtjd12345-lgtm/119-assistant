@@ -2612,7 +2612,7 @@ def topbar() -> None:
             <div class="topbar">
                 <div>
                             <b>{APP_NAME}</b> <span class="badge">{esc(role_label)}</span>
-                            <div class="official-mini">충남소방본부 제공 공식 AI가 아닌 비공식 참고 서비스</div>
+                            <div class="official-mini">소방공무원을 위한 행정업무 AI비서입니다.</div>
                         </div>
                         <div class="muted">{datetime.now().strftime('%Y-%m-%d %H:%M')}</div>
             </div>
