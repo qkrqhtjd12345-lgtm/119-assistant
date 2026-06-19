@@ -89,6 +89,8 @@ st.markdown(f"""
         gap: 12px;
         display: flex;
         flex-direction: column;
+        align-items: stretch;
+        width: 100%;
     }}
     section[data-testid="stSidebar"] div[role="radiogroup"] label {{
         background: rgba(255,255,255,0.06);
@@ -100,7 +102,11 @@ st.markdown(f"""
         transition: all 0.15s ease;
         font-size: 22px !important;
         font-weight: 700 !important;
-        width: 100%;
+        width: 100% !important;
+        box-sizing: border-box !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
     }}
     /* 라벨 안 텍스트 요소까지 폰트 강제 */
     section[data-testid="stSidebar"] div[role="radiogroup"] label p,
