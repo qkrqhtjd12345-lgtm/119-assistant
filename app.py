@@ -66,6 +66,13 @@ st.markdown(f"""
 
     /* 사이드바 */
     section[data-testid="stSidebar"] {{ background-color: {NAVY}; }}
+    section[data-testid="stSidebar"] > div {{
+        width: 340px !important;
+    }}
+    section[data-testid="stSidebar"][aria-expanded="true"] {{
+        width: 340px !important;
+        min-width: 340px !important;
+    }}
     section[data-testid="stSidebar"] * {{ color: {WHITE} !important; }}
 
     /* 사이드바 메뉴 라벨 텍스트 */
@@ -87,13 +94,20 @@ st.markdown(f"""
         background: rgba(255,255,255,0.06);
         border: 1px solid rgba(255,255,255,0.15);
         border-radius: 10px;
-        padding: 22px 18px !important;
+        padding: 26px 22px !important;
         margin: 0 !important;
         cursor: pointer;
         transition: all 0.15s ease;
-        font-size: 18px !important;
-        font-weight: 600 !important;
+        font-size: 22px !important;
+        font-weight: 700 !important;
         width: 100%;
+    }}
+    /* 라벨 안 텍스트 요소까지 폰트 강제 */
+    section[data-testid="stSidebar"] div[role="radiogroup"] label p,
+    section[data-testid="stSidebar"] div[role="radiogroup"] label div,
+    section[data-testid="stSidebar"] div[role="radiogroup"] label span {{
+        font-size: 22px !important;
+        font-weight: 700 !important;
     }}
     section[data-testid="stSidebar"] div[role="radiogroup"] label:hover {{
         background: rgba(255,255,255,0.15);
