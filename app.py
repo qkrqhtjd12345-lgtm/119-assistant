@@ -36,7 +36,7 @@ import pandas as pd
 import streamlit as st
 
 APP_NAME = "충남119행정비서"
-APP_VERSION = "v1.0.9 MVP"
+APP_VERSION = "v1.0.12 MVP"
 DATA_DIR = Path(__file__).parent / "data"
 SESSION_TIMEOUT_SECONDS = 10 * 60
 
@@ -80,7 +80,7 @@ VISIBLE_TO_USER = {"Public"}
 
 def normalize_visibility(value: str | None) -> str:
     return "Public" if value == "Public" else "Private"
-RESOURCE_CATEGORIES = ["복무", "법령", "조례", "감사", "예산", "인사", "교육", "장비", "기타"]
+RESOURCE_CATEGORIES = ["법령·규칙", "조례·훈령", "지침·내부 규정", "기타"]
 QUESTION_CATEGORIES = ["복무", "병가", "연가", "출장", "교육", "초과근무", "인사", "감사", "예산", "기타"]
 QUESTION_STATUS = ["정상", "자동차단", "삭제요청", "비공개"]
 ADMIN_VIEW_PURPOSES = ["오류 확인", "오남용 점검", "사용자 민원 대응", "개인정보·보안자료 신고 처리", "서비스 품질 개선"]
@@ -98,12 +98,14 @@ NON_PUBLIC_REASONS = [
 ]
 
 AI_DISCLAIMER = (
-    "본 답변은 업무 참고용 AI 정보입니다. 등록 자료 및 AI 답변의 정확성, 완전성, 최신성 또는 "
+    "본 답변은 충남소방본부가 제공·운영하는 공식 AI의 답변이 아닌 업무 참고용 AI 정보입니다. "
+    "등록 자료 및 AI 답변의 정확성, 완전성, 최신성 또는 "
     "특정 업무처리의 적법성을 보증하지 않습니다. 최종 판단 및 업무처리 책임은 사용자와 소속 기관에 있습니다. "
     "정확한 내용은 반드시 담당 부서와 공식 자료를 확인하십시오."
 )
 
 COMMON_DISCLAIMER = """
+본 서비스는 충남소방본부가 제공·운영하는 공식 AI 서비스가 아닙니다.  
 본 서비스는 업무 참고용 AI 보조 도구이며, 공식 유권해석, 행정처분, 법률자문, 인사결정, 감사 판단을 대신하지 않습니다.  
 운영자 및 관리자는 AI 답변, 등록 자료, 외부 출처 자료의 정확성, 완전성, 최신성, 적법성, 저작권 상태를 보증하지 않습니다.  
 관리자는 공식 출처 존재 여부, 공개 가능 여부, 보안자료 여부, 공개범위 설정만 제한적으로 확인합니다.  
@@ -358,7 +360,7 @@ def init_storage() -> None:
                 {
                     "id": uid("res"),
                     "title": "국가법령정보센터",
-                    "category": "법령",
+                    "category": "법령·규칙",
                     "agency": "법제처",
                     "source_url": "https://www.law.go.kr",
                     "summary": "공개 법령 확인용 공식 출처입니다.",
@@ -372,7 +374,7 @@ def init_storage() -> None:
                 {
                     "id": uid("res"),
                     "title": "자치법규정보시스템",
-                    "category": "조례",
+                    "category": "조례·훈령",
                     "agency": "행정안전부",
                     "source_url": "https://www.elis.go.kr",
                     "summary": "조례·규칙 확인용 공식 출처입니다.",
@@ -387,8 +389,27 @@ def init_storage() -> None:
         )
 
 
+def normalize_resource_category(value: str | None) -> str:
+    """기존 자료 분류값을 관련 근거 기준으로 정리한다."""
+    mapping = {
+        "법령": "법령·규칙",
+        "규칙": "법령·규칙",
+        "조례": "조례·훈령",
+        "훈령": "조례·훈령",
+        "감사": "지침·내부 규정",
+        "예산": "지침·내부 규정",
+        "인사": "지침·내부 규정",
+        "교육": "지침·내부 규정",
+        "장비": "지침·내부 규정",
+        "복무": "지침·내부 규정",
+    }
+    if value in RESOURCE_CATEGORIES:
+        return value or "기타"
+    return mapping.get(value or "", "기타")
+
+
 def normalize_existing_data() -> None:
-    """기존 JSON 데이터에 남아 있는 예전 공개범위 값을 공개/비공개 구조로 정리한다."""
+    """기존 JSON 데이터에 남아 있는 예전 공개범위·자료 분류값을 현재 구조로 정리한다."""
     resources = load_json("resources", [])
     changed = False
     for resource in resources:
@@ -399,8 +420,28 @@ def normalize_existing_data() -> None:
             if new_visibility == "Private" and not resource.get("non_public_reason"):
                 resource["non_public_reason"] = "기존 공개범위 값을 비공개로 정리"
             changed = True
+
+        old_category = resource.get("category")
+        new_category = normalize_resource_category(old_category)
+        if old_category != new_category:
+            resource["category"] = new_category
+            changed = True
     if changed:
         save_json("resources", resources)
+
+    requests = load_json("resource_requests", [])
+    req_changed = False
+    for req in requests:
+        if not req.get("request_type"):
+            req["request_type"] = "등록"
+            req_changed = True
+        old_category = req.get("category")
+        new_category = normalize_resource_category(old_category)
+        if old_category != new_category:
+            req["category"] = new_category
+            req_changed = True
+    if req_changed:
+        save_json("resource_requests", requests)
 
 
 
@@ -764,6 +805,29 @@ def inject_css() -> None:
         .question-card h2, .question-hero h2 { font-size: 50px !important; }
         .question-card .muted { font-size: 22px !important; }
         .question-note { font-size: 20px !important; }
+        .privacy-strong {
+            color: #B42318 !important;
+            font-weight: 1000 !important;
+            font-size: 22px !important;
+            letter-spacing: -0.02em;
+        }
+        .login-privacy-alert {
+            border: 2px solid #B42318;
+            background: #FFF1F0;
+            color: #7A271A;
+            border-radius: 22px;
+            padding: 24px 28px;
+            margin: 18px 0 24px 0;
+            font-size: 19px;
+            line-height: 1.7;
+            font-weight: 800;
+        }
+        .login-privacy-alert b {
+            color: #B42318;
+            font-size: 25px;
+            font-weight: 1000;
+        }
+
         [data-testid="stTextInput"] input,
         [data-testid="stTextArea"] textarea {
             font-size: 21px !important;
@@ -884,8 +948,8 @@ def inject_css() -> None:
             font-weight: 900 !important;
         }
         .sidebar-logo img {
-            width: 260px !important;
-            height: 116px !important;
+            width: 330px !important;
+            height: 150px !important;
             object-fit: contain !important;
             background: #FFFFFF !important;
             border-radius: 18px !important;
@@ -895,6 +959,104 @@ def inject_css() -> None:
         .sidebar-mini-card { min-height: 118px !important; padding: 22px 16px !important; border-radius: 22px !important; }
         .sidebar-mini-num { font-size: 42px !important; }
         .sidebar-mini-label { font-size: 19px !important; }
+
+        /* v1.0.10: 공식 제공 아님 안내 + 모바일 사용성 보정 */
+        .official-notice {
+            display: inline-block;
+            margin-top: 14px;
+            padding: 10px 15px;
+            border-radius: 999px;
+            background: #FFF7ED;
+            color: #9A3412;
+            border: 1px solid #FED7AA;
+            font-size: 16px;
+            font-weight: 900;
+            letter-spacing: -0.02em;
+        }
+        .official-mini {
+            margin-top: 6px;
+            font-size: 14px !important;
+            color: #667085 !important;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+        }
+        @media (max-width: 768px) {
+            html, body, [class*="css"], .stMarkdown, .stText, p, div { font-size: 16px !important; }
+            .block-container {
+                max-width: 100% !important;
+                padding: 0.85rem 0.8rem 1.4rem 0.8rem !important;
+            }
+            [data-testid="stSidebar"] {
+                min-width: 280px !important;
+                width: 86vw !important;
+                max-width: 360px !important;
+            }
+            [data-testid="stSidebar"] .sidebar-logo img {
+                width: 190px !important;
+                height: 86px !important;
+            }
+            [data-testid="stSidebar"] div[role="radiogroup"] > label,
+            [data-testid="stSidebar"] label[data-baseweb="radio"] {
+                min-height: 58px !important;
+                padding: 14px 16px !important;
+                margin: 8px 0 !important;
+                border-radius: 18px !important;
+            }
+            [data-testid="stSidebar"] div[role="radiogroup"] > label p,
+            [data-testid="stSidebar"] label[data-baseweb="radio"] p {
+                font-size: 18px !important;
+                line-height: 1.2 !important;
+            }
+            .sidebar-mini-grid {
+                grid-template-columns: 1fr 1fr !important;
+                gap: 8px !important;
+                margin: 12px 0 14px 0 !important;
+            }
+            .sidebar-mini-card {
+                min-height: 76px !important;
+                padding: 12px 10px !important;
+                border-radius: 16px !important;
+            }
+            .sidebar-mini-num { font-size: 25px !important; }
+            .sidebar-mini-label { font-size: 13px !important; }
+            .section-card, .metric-card, .resource-card, .notice-card, .question-card {
+                padding: 20px 18px !important;
+                border-radius: 20px !important;
+                margin-bottom: 16px !important;
+            }
+            .question-card h2, .question-hero h2 { font-size: 30px !important; }
+            .question-card .muted { font-size: 16px !important; }
+            [data-testid="stTextInput"] input,
+            [data-testid="stTextArea"] textarea {
+                font-size: 16px !important;
+                min-height: 52px !important;
+                border-radius: 14px !important;
+                padding: 12px 14px !important;
+            }
+            textarea[aria-label="질문 내용"] { min-height: 220px !important; }
+            .stButton button, .stFormSubmitButton button, button[kind="primary"] {
+                min-height: 52px !important;
+                font-size: 16px !important;
+                border-radius: 14px !important;
+            }
+            .topbar {
+                display: block !important;
+                padding: 16px 16px !important;
+                border-radius: 18px !important;
+                margin-bottom: 14px !important;
+            }
+            .official-mini { font-size: 12px !important; line-height: 1.35 !important; }
+            .stTabs [data-baseweb="tab"],
+            [data-testid="stTabs"] button[role="tab"] {
+                min-height: 48px !important;
+                padding: 10px 10px !important;
+                border-radius: 14px !important;
+            }
+            .stTabs [data-baseweb="tab"] p,
+            [data-testid="stTabs"] button[role="tab"] p {
+                font-size: 16px !important;
+            }
+        }
 </style>
         """,
         unsafe_allow_html=True,
@@ -1080,17 +1242,93 @@ def login_page() -> None:
             font-size: 22px !important;
             border-radius: 18px !important;
         }}
-        .sidebar-logo img {{ width: 260px !important; height: 116px !important; object-fit: contain !important; }}
+        .sidebar-logo img {{ width: 330px !important; height: 150px !important; object-fit: contain !important; }}
         .sidebar-mini-grid {{ gap: 16px !important; margin: 18px 0 24px 0 !important; }}
         .sidebar-mini-card {{ min-height: 112px !important; padding: 20px 16px !important; }}
         .sidebar-mini-num {{ font-size: 40px !important; }}
         .sidebar-mini-label {{ font-size: 18px !important; }}
         .sidebar-bottom-spacer {{ height: 16px !important; }}
+        .official-notice {{
+            display: inline-block;
+            margin-top: 14px;
+            padding: 10px 15px;
+            border-radius: 999px;
+            background: #FFF7ED;
+            color: #9A3412;
+            border: 1px solid #FED7AA;
+            font-size: 16px;
+            font-weight: 900;
+            letter-spacing: -0.02em;
+        }}
+        @media (max-width: 768px) {{
+            .block-container {{
+                max-width: 100% !important;
+                padding: 1.2rem 1rem 1.8rem 1rem !important;
+            }}
+            .login-hero {{
+                padding: 2px 0 18px 0 !important;
+                margin-bottom: 6px !important;
+            }}
+            .login-hero img {{
+                width: 260px !important;
+                max-height: 120px !important;
+                margin-bottom: 14px !important;
+            }}
+            .login-hero-title {{
+                font-size: 32px !important;
+                line-height: 1.12 !important;
+            }}
+            .login-hero-subtitle {{
+                font-size: 16px !important;
+                margin-top: 10px !important;
+            }}
+            .official-notice {{
+                font-size: 13px !important;
+                line-height: 1.35 !important;
+                padding: 8px 11px !important;
+                border-radius: 14px !important;
+            }}
+            .login-divider {{ margin: 16px 0 18px 0 !important; }}
+            div[data-testid="stForm"], .login-section-title, .login-notice-box {{
+                max-width: 100% !important;
+            }}
+            .login-section-title {{
+                font-size: 28px !important;
+                margin-bottom: 16px !important;
+            }}
+            [data-testid="stTextInput"] input {{
+                min-height: 56px !important;
+                font-size: 17px !important;
+                border-radius: 12px !important;
+            }}
+            .stFormSubmitButton button[kind="primary"] {{
+                min-height: 58px !important;
+                font-size: 18px !important;
+                border-radius: 12px !important;
+            }}
+            .stTabs [data-baseweb="tab-list"] {{ gap: 10px !important; }}
+            .stTabs [data-baseweb="tab"],
+            [data-testid="stTabs"] button[role="tab"] {{
+                min-height: 48px !important;
+                padding: 0 4px 10px 4px !important;
+            }}
+            .stTabs [data-baseweb="tab"] p,
+            [data-testid="stTabs"] button[role="tab"] p {{
+                font-size: 17px !important;
+            }}
+            label p {{ font-size: 16px !important; }}
+            .login-notice-box {{
+                font-size: 14px !important;
+                padding: 14px 15px !important;
+                border-radius: 13px !important;
+            }}
+        }}
         </style>
         <div class="login-hero">
             <img src="{FIRE_EMBLEM_DATA_URI}" alt="소방 상징 이미지">
             <h1 class="login-hero-title">{APP_NAME}</h1>
             <div class="login-hero-subtitle">소방공무원 행정·복무 업무 보조 서비스</div>
+            <div class="official-notice">충남소방본부 제공 공식 AI가 아닌 비공식 참고 서비스입니다.</div>
         </div>
         <div class="login-divider"></div>
         """,
@@ -1121,6 +1359,7 @@ def login_page() -> None:
                 save_json("users", users)
                 st.session_state["user_id"] = user_id
                 st.session_state["last_active_ts"] = time.time()
+                st.session_state["show_login_privacy_notice"] = True
                 add_audit(user_id, "LOGIN", user_id, "로그인 성공")
                 st.rerun()
 
@@ -1260,7 +1499,8 @@ def home_page() -> None:
             <div class="muted">궁금한 복무·행정 내용을 한 번에 입력하십시오. 분야는 자동으로 분류됩니다.</div>
             <div class="question-note">
                 질문 내용은 본인만 확인할 수 있습니다. 타인의 질문 내용은 공개되지 않습니다.<br>
-                개인정보·민감정보·보안자료는 입력하지 마십시오. 정확한 내용은 담당 부서와 공식 자료로 확인하십시오.
+                <span class="privacy-strong">개인정보·민감정보·보안자료는 절대 입력하지 마십시오.</span><br>
+                정확한 내용은 담당 부서와 공식 자료로 확인하십시오.
             </div>
         </div>
         """,
@@ -1362,9 +1602,9 @@ def resources_page() -> None:
     resources = [r for r in load_json("resources", []) if normalize_visibility(r.get("visibility")) in VISIBLE_TO_USER]
     col1, col2 = st.columns([2, 1])
     with col1:
-        keyword = st.text_input("자료 검색", placeholder="자료명, 발행기관, 분야, 키워드")
+        keyword = st.text_input("자료 검색", placeholder="자료명, 발행기관, 관련 근거, 키워드")
     with col2:
-        category_filter = st.selectbox("분야 필터", ["전체"] + RESOURCE_CATEGORIES)
+        category_filter = st.selectbox("관련 근거 필터", ["전체"] + RESOURCE_CATEGORIES)
 
     filtered = []
     for r in resources:
@@ -1414,7 +1654,7 @@ def resource_request_page() -> None:
 
     with st.form("resource_request_form"):
         title = st.text_input("자료명", max_chars=120)
-        category = st.selectbox("분야", RESOURCE_CATEGORIES)
+        category = st.selectbox("관련 근거", RESOURCE_CATEGORIES)
         agency = st.text_input("발행기관", max_chars=80)
         source_url = st.text_input("공식 출처 URL", placeholder="https://...")
         reason = st.text_area("요청 사유", max_chars=500)
@@ -1430,6 +1670,7 @@ def resource_request_page() -> None:
             record = {
                 "id": uid("req"),
                 "user_id": user["user_id"],
+                "request_type": "등록",
                 "title": title.strip(),
                 "category": category,
                 "agency": agency.strip(),
@@ -1446,11 +1687,59 @@ def resource_request_page() -> None:
             add_audit(user["user_id"], "RESOURCE_REQUEST_CREATE", record["id"], title.strip())
             st.success("자료 등록 요청이 접수되었습니다. 관리자는 공개 가능 여부만 제한적으로 확인합니다.")
 
+    st.markdown("### 자료 삭제 요청")
+    public_resources = [r for r in load_json("resources", []) if normalize_visibility(r.get("visibility")) == "Public"]
+    if public_resources:
+        resource_options = {f"{r.get('title', '')} · {r.get('agency', '')} · {r.get('id', '')}": r for r in public_resources}
+        with st.form("resource_delete_request_form"):
+            selected_label = st.selectbox("삭제 요청할 자료", list(resource_options.keys()))
+            delete_reason = st.text_area("삭제 요청 사유", max_chars=500, placeholder="예: 오래된 자료, 출처 오류, 중복 등록 등")
+            delete_submitted = st.form_submit_button("자료 삭제 요청", type="primary", use_container_width=True)
+        if delete_submitted:
+            target = resource_options[selected_label]
+            if not delete_reason.strip():
+                st.error("삭제 요청 사유를 입력하십시오.")
+            else:
+                requests = load_json("resource_requests", [])
+                record = {
+                    "id": uid("req"),
+                    "user_id": user["user_id"],
+                    "request_type": "삭제",
+                    "resource_id": target.get("id", ""),
+                    "title": target.get("title", ""),
+                    "category": target.get("category", "기타"),
+                    "agency": target.get("agency", ""),
+                    "source_url": target.get("source_url", ""),
+                    "reason": delete_reason.strip(),
+                    "status": "대기",
+                    "admin_memo": "",
+                    "created_at": now_iso(),
+                    "processed_at": "",
+                    "processed_by": "",
+                }
+                requests.append(record)
+                save_json("resource_requests", requests)
+                add_audit(user["user_id"], "RESOURCE_DELETE_REQUEST_CREATE", record["id"], target.get("title", ""))
+                st.success("자료 삭제 요청이 접수되었습니다. 관리자가 사유를 확인한 뒤 처리합니다.")
+    else:
+        st.info("삭제 요청할 공개 자료가 없습니다.")
+
     st.markdown("### 내 요청 이력")
     mine = [r for r in load_json("resource_requests", []) if r.get("user_id") == user["user_id"]]
     if mine:
-        view = pd.DataFrame(mine)[["created_at", "title", "category", "agency", "status", "admin_memo"]]
-        st.dataframe(view.sort_values("created_at", ascending=False), use_container_width=True, hide_index=True)
+        view_rows = []
+        for item in mine:
+            view_rows.append({
+                "신청일": item.get("created_at", ""),
+                "요청구분": item.get("request_type", "등록"),
+                "자료명": item.get("title", ""),
+                "관련근거": item.get("category", ""),
+                "발행기관": item.get("agency", ""),
+                "상태": item.get("status", ""),
+                "관리자메모": item.get("admin_memo", ""),
+            })
+        view = pd.DataFrame(view_rows)
+        st.dataframe(view.sort_values("신청일", ascending=False), use_container_width=True, hide_index=True)
     else:
         st.info("자료 등록 요청 이력이 없습니다.")
 
@@ -1607,7 +1896,7 @@ def admin_resource_register() -> None:
 
         with st.form("resource_register_form"):
             title = st.text_input("자료명")
-            category = st.selectbox("분야", RESOURCE_CATEGORIES)
+            category = st.selectbox("관련 근거", RESOURCE_CATEGORIES)
             agency = st.text_input("발행기관")
             source_url = st.text_input("공식 출처 URL")
             summary = st.text_area("요약 또는 안내문", height=100)
@@ -1666,14 +1955,14 @@ def admin_resource_register() -> None:
 def admin_resource_manage() -> None:
     admin = current_user()
     assert admin is not None
-    st.markdown("### 자료 목록 및 공개범위 변경")
+    st.markdown("### 자료 목록 및 공개범위 변경·삭제")
     resources = load_json("resources", [])
 
     col1, col2, col3 = st.columns(3)
     with col1:
         visibility_filter = st.selectbox("공개범위 필터", ["전체", "공개", "비공개"])
     with col2:
-        category_filter = st.selectbox("분야 필터", ["전체"] + RESOURCE_CATEGORIES, key="res_manage_cat")
+        category_filter = st.selectbox("관련 근거 필터", ["전체"] + RESOURCE_CATEGORIES, key="res_manage_cat")
     with col3:
         keyword = st.text_input("검색", key="res_manage_search")
 
@@ -1696,7 +1985,7 @@ def admin_resource_manage() -> None:
     if filtered:
         table = pd.DataFrame(filtered)[
             ["created_at", "title", "category", "agency", "visibility_label", "checked_at", "created_by", "id"]
-        ].rename(columns={"visibility_label": "공개상태"})
+        ].rename(columns={"category": "관련근거", "visibility_label": "공개상태"})
         st.dataframe(table.sort_values("created_at", ascending=False), use_container_width=True, hide_index=True)
     else:
         st.info("자료가 없습니다.")
@@ -1729,37 +2018,101 @@ def admin_resource_manage() -> None:
                 st.success("공개범위가 변경되었습니다.")
                 st.rerun()
 
+            st.divider()
+            st.markdown("#### 자료 삭제")
+            st.caption("삭제하면 등록 자료 목록과 일반 사용자 자료 화면에서 즉시 제거됩니다. 삭제 작업은 감사로그에 기록됩니다.")
+            delete_confirm = st.checkbox("이 자료를 삭제하겠습니다.", key=f"delete_confirm_{r['id']}")
+            delete_reason = st.text_input("삭제 사유", key=f"delete_reason_{r['id']}", placeholder="예: 중복 등록, 출처 오류, 공개 부적절")
+            if st.button("자료 삭제", key=f"delete_resource_{r['id']}", type="secondary", disabled=not delete_confirm):
+                all_resources = load_json("resources", [])
+                before_count = len(all_resources)
+                all_resources = [item for item in all_resources if item.get("id") != r.get("id")]
+                if len(all_resources) == before_count:
+                    st.error("삭제할 자료를 찾지 못했습니다. 화면을 새로고침한 뒤 다시 시도하십시오.")
+                else:
+                    save_json("resources", all_resources)
+                    add_audit(
+                        admin["user_id"],
+                        "RESOURCE_DELETE",
+                        r["id"],
+                        f"{r.get('title', '')} / {delete_reason.strip() or '사유 미입력'}",
+                    )
+                    st.success("자료가 삭제되었습니다.")
+                    st.rerun()
+
 def admin_resource_requests() -> None:
     admin = current_user()
     assert admin is not None
-    st.markdown("### 자료 등록 요청 처리")
+    st.markdown("### 자료 요청 처리")
     requests = load_json("resource_requests", [])
+    for req in requests:
+        if not req.get("request_type"):
+            req["request_type"] = "등록"
     status_filter = st.selectbox("상태 필터", ["전체", "대기", "승인", "반려", "등록금지"])
-    filtered = [r for r in requests if status_filter == "전체" or r.get("status") == status_filter]
+    type_filter = st.selectbox("요청구분 필터", ["전체", "등록", "삭제"])
+    filtered = [
+        r for r in requests
+        if (status_filter == "전체" or r.get("status") == status_filter)
+        and (type_filter == "전체" or r.get("request_type", "등록") == type_filter)
+    ]
 
     if filtered:
-        table = pd.DataFrame(filtered)[["created_at", "user_id", "title", "category", "agency", "status", "id"]]
-        st.dataframe(table.sort_values("created_at", ascending=False), use_container_width=True, hide_index=True)
+        rows = []
+        for r in filtered:
+            rows.append({
+                "신청일": r.get("created_at", ""),
+                "요청자": r.get("user_id", ""),
+                "요청구분": r.get("request_type", "등록"),
+                "자료명": r.get("title", ""),
+                "관련근거": r.get("category", ""),
+                "발행기관": r.get("agency", ""),
+                "상태": r.get("status", ""),
+                "요청ID": r.get("id", ""),
+            })
+        table = pd.DataFrame(rows)
+        st.dataframe(table.sort_values("신청일", ascending=False), use_container_width=True, hide_index=True)
     else:
         st.info("자료 요청이 없습니다.")
 
     for req in sorted(filtered, key=lambda x: x.get("created_at", ""), reverse=True):
-        with st.expander(f"{req.get('title')} · {req.get('status')} · {req.get('id')}"):
+        req_type = req.get("request_type", "등록")
+        with st.expander(f"{req_type} 요청 · {req.get('title')} · {req.get('status')} · {req.get('id')}"):
+            st.write("요청 구분:", req_type)
             st.write("요청자:", req.get("user_id"))
+            st.write("관련 근거:", req.get("category"))
             st.write("발행기관:", req.get("agency"))
             st.write("공식 출처 URL:", req.get("source_url"))
+            if req_type == "삭제":
+                st.write("삭제 대상 자료 ID:", req.get("resource_id", ""))
             st.write("요청 사유:", req.get("reason"))
             memo = st.text_area("처리 메모", value=req.get("admin_memo", ""), key=f"memo_{req['id']}")
+
+            if req.get("status") != "대기":
+                st.info(f"이미 {req.get('status')} 처리된 요청입니다.")
+                continue
+
             col1, col2, col3 = st.columns(3)
             with col1:
                 approve = st.button("승인", key=f"approve_{req['id']}")
             with col2:
                 reject = st.button("반려", key=f"reject_{req['id']}")
             with col3:
-                prohibit = st.button("등록금지", key=f"prohibit_{req['id']}")
+                prohibit = st.button("등록금지", key=f"prohibit_{req['id']}", disabled=(req_type == "삭제"))
 
             if approve or reject or prohibit:
                 new_status = "승인" if approve else "반려" if reject else "등록금지"
+
+                if req_type == "삭제" and approve:
+                    all_resources = load_json("resources", [])
+                    before_count = len(all_resources)
+                    target_id = req.get("resource_id", "")
+                    all_resources = [item for item in all_resources if item.get("id") != target_id]
+                    if len(all_resources) == before_count:
+                        st.error("삭제 대상 자료를 찾지 못했습니다. 이미 삭제되었거나 자료 ID가 일치하지 않습니다.")
+                        continue
+                    save_json("resources", all_resources)
+                    add_audit(admin["user_id"], "RESOURCE_DELETE_BY_REQUEST", target_id, f"{req.get('title', '')} / 요청ID {req.get('id')} / {memo.strip()}")
+
                 all_requests = load_json("resource_requests", [])
                 for item in all_requests:
                     if item.get("id") == req.get("id"):
@@ -1768,8 +2121,13 @@ def admin_resource_requests() -> None:
                         item["processed_at"] = now_iso()
                         item["processed_by"] = admin["user_id"]
                 save_json("resource_requests", all_requests)
-                add_audit(admin["user_id"], "RESOURCE_REQUEST_PROCESS", req["id"], f"{new_status} / {memo.strip()}")
-                st.success(f"{new_status} 처리했습니다. 실제 자료 공개는 관리자 자료 등록 화면에서 기본 비공개 기준으로 별도 등록하십시오.")
+                add_audit(admin["user_id"], "RESOURCE_REQUEST_PROCESS", req["id"], f"{req_type} / {new_status} / {memo.strip()}")
+                if req_type == "삭제" and approve:
+                    st.success("자료 삭제 요청을 승인했고, 해당 자료를 삭제했습니다.")
+                elif req_type == "등록" and approve:
+                    st.success("등록 요청을 승인했습니다. 실제 자료 공개는 관리자 자료 등록 화면에서 기본 비공개 기준으로 별도 등록하십시오.")
+                else:
+                    st.success(f"{new_status} 처리했습니다.")
                 st.rerun()
 
 
@@ -2252,8 +2610,11 @@ def topbar() -> None:
         st.markdown(
             f"""
             <div class="topbar">
-                <div><b>{APP_NAME}</b> <span class="badge">{esc(role_label)}</span></div>
-                <div class="muted">{datetime.now().strftime('%Y-%m-%d %H:%M')}</div>
+                <div>
+                            <b>{APP_NAME}</b> <span class="badge">{esc(role_label)}</span>
+                            <div class="official-mini">충남소방본부 제공 공식 AI가 아닌 비공식 참고 서비스</div>
+                        </div>
+                        <div class="muted">{datetime.now().strftime('%Y-%m-%d %H:%M')}</div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -2277,6 +2638,25 @@ def topbar() -> None:
             st.markdown("</div>", unsafe_allow_html=True)
 
 
+def render_login_privacy_notice() -> None:
+    """로그인 직후 매번 개인정보·책임 안내를 표시한다."""
+    if not st.session_state.get("show_login_privacy_notice"):
+        return
+    st.markdown(
+        """
+        <div class="login-privacy-alert">
+            <b>개인정보 입력 금지 및 책임 안내</b><br>
+            질문, 자료 요청, 권한 요청 사유에는 개인정보·민감정보·보안자료를 입력하지 마십시오.<br>
+            입력한 내용에 대한 최종 책임은 사용자 본인과 소속 기관에 있으며, 정확한 업무처리는 반드시 담당 부서와 공식 자료로 확인해야 합니다.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    if st.button("개인정보 입력 금지 및 책임 안내를 확인했습니다", key="confirm_login_privacy_notice", type="primary", use_container_width=True):
+        st.session_state["show_login_privacy_notice"] = False
+        st.rerun()
+
+
 def main() -> None:
     st.set_page_config(page_title=APP_NAME, layout="wide", initial_sidebar_state="expanded")
     init_storage()
@@ -2289,6 +2669,7 @@ def main() -> None:
 
     check_session()
     topbar()
+    render_login_privacy_notice()
     menu = sidebar_menu()
 
     if menu == "홈":
