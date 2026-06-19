@@ -75,6 +75,15 @@ st.markdown(f"""
     }}
     section[data-testid="stSidebar"] * {{ color: {WHITE} !important; }}
 
+    /* 메뉴(radio) 위젯 블록이 사이드바 폭을 다른 요소와 동일하게 쓰도록 */
+    section[data-testid="stSidebar"] div[data-testid="stRadio"] {{
+        width: 100% !important;
+    }}
+    section[data-testid="stSidebar"] div[data-testid="stRadio"] > div {{
+        width: 100% !important;
+        padding: 0 !important;
+    }}
+
     /* 사이드바 메뉴 라벨 텍스트 */
     .menu-label {{
         font-size: 13px;
@@ -262,9 +271,18 @@ def emblem_html(width=200):
 def classify_question(q: str):
     q = q.lower()
     categories = {
-        "병가": ["병가"], "공가": ["공가"], "초과근무": ["초과", "시간외"],
-        "e사람": ["e사람"], "온나라": ["온나라"], "e호조": ["e호조"],
-        "법령": ["법", "법령"], "조례": ["조례"]
+        "연가": ["연가", "연차"],
+        "병가": ["병가"],
+        "공가": ["공가"],
+        "출장": ["출장"],
+        "초과근무": ["초과", "시간외", "야근"],
+        "당직": ["당직", "숙직"],
+        "휴직": ["휴직"],
+        "e사람": ["e사람"],
+        "온나라": ["온나라"],
+        "e호조": ["e호조"],
+        "법령": ["법", "법령"],
+        "조례": ["조례"],
     }
     for category, keywords in categories.items():
         if any(k in q for k in keywords):
@@ -333,46 +351,31 @@ def login_page():
 # 홈
 # ============================================================
 def home_page():
-    c1, c2 = st.columns([3, 1])
-    with c1:
+    st.markdown(f"""
+    <div style="margin-bottom:14px;">
+        <div style="font-size:26px;font-weight:700;color:{TEXT_DARK};margin-bottom:6px;">무엇을 도와드릴까요?</div>
+        <div style="font-size:14px;color:{TEXT_GRAY};">복무규정·병가·공가·초과근무 등 궁금한 점을 자유롭게 물어보세요.</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    question = st.text_area(
+        "질문",
+        placeholder="메시지를 입력하세요...",
+        label_visibility="collapsed",
+        height=130,
+        key="home_question"
+    )
+    ask = st.button("질문하기")
+
+    if question and ask:
+        category = classify_question(question)
         st.markdown(f"""
-        <div style="margin-bottom:14px;">
-            <div style="font-size:26px;font-weight:700;color:{TEXT_DARK};margin-bottom:6px;">무엇을 도와드릴까요?</div>
-            <div style="font-size:14px;color:{TEXT_GRAY};">복무규정·병가·공가·초과근무 등 궁금한 점을 자유롭게 물어보세요.</div>
+        <div class="info-box">
+            <div class="info-box-title">답변</div>
+            <p><strong>분류:</strong> {category}</p>
+            <p>현재 Gemini API 연동 작업 중입니다. 다음 업데이트에서 실시간 AI 답변이 제공될 예정입니다.</p>
         </div>
         """, unsafe_allow_html=True)
-
-        question = st.text_area(
-            "질문",
-            placeholder="메시지를 입력하세요...",
-            label_visibility="collapsed",
-            height=130,
-            key="home_question"
-        )
-        ask = st.button("질문하기")
-
-        if question and ask:
-            category = classify_question(question)
-            if category in st.session_state.faq_counts:
-                st.session_state.faq_counts[category] += 1
-            st.markdown(f"""
-            <div class="info-box">
-                <div class="info-box-title">답변</div>
-                <p><strong>분류:</strong> {category}</p>
-                <p>현재 Gemini API 연동 작업 중입니다. 다음 업데이트에서 실시간 AI 답변이 제공될 예정입니다.</p>
-            </div>
-            """, unsafe_allow_html=True)
-    with c2:
-        st.markdown('<div class="info-box"><div class="info-box-title">인기 질문</div>', unsafe_allow_html=True)
-        ranked = sorted(st.session_state.faq_counts.items(), key=lambda x: x[1], reverse=True)
-        any_q = False
-        for i, (name, cnt) in enumerate(ranked[:5], 1):
-            if cnt > 0:
-                any_q = True
-                st.markdown(f"**{i}. {name}** · {cnt}회")
-        if not any_q:
-            st.markdown(f'<p style="color:{TEXT_GRAY};font-size:14px;">아직 질문 기록이 없습니다.</p>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
 
 # ============================================================
 # 법령·조례
