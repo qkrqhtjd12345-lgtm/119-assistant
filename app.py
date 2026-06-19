@@ -36,7 +36,7 @@ import pandas as pd
 import streamlit as st
 
 APP_NAME = "충남119행정비서"
-APP_VERSION = "v1.0.7 MVP"
+APP_VERSION = "v1.0.8 MVP"
 DATA_DIR = Path(__file__).parent / "data"
 SESSION_TIMEOUT_SECONDS = 10 * 60
 
@@ -50,7 +50,9 @@ FILES = {
     "admin_requests": DATA_DIR / "admin_requests.json",
 }
 
-LOGO_PATH = Path(__file__).parent / "assets" / "fire_emblem_clean.png"
+LOGO_PATH = Path(__file__).parent / "assets" / "fire_emblem.png"
+if not LOGO_PATH.exists():
+    LOGO_PATH = Path(__file__).parent / "assets" / "fire_emblem_clean.png"
 if not LOGO_PATH.exists():
     LOGO_PATH = Path(__file__).parent / "assets" / "fire_logo.png"
 if LOGO_PATH.exists():
@@ -421,25 +423,29 @@ def monthly_count_df(records: list[dict[str, Any]], date_field: str, label: str,
 
 
 def sidebar_stats_html(user: dict[str, Any]) -> str:
-    """왼쪽 사이드바 요약 통계 HTML."""
+    """왼쪽 사이드바 요약 통계 HTML. 권한요청 수는 표시하지 않는다."""
     resource_requests = load_json("resource_requests", [])
-    admin_requests = load_json("admin_requests", [])
+    questions = load_json("questions", [])
+    today = today_str()
+
     if user.get("role") == "admin":
         items = [
-            ("자료요청", sum(1 for r in resource_requests if r.get("status") == "대기")),
+            ("누적질문", len(questions)),
+            ("오늘질문", sum(1 for q in questions if q.get("created_at", "").startswith(today))),
+            ("자료대기", sum(1 for r in resource_requests if r.get("status") == "대기")),
             ("자료승인", sum(1 for r in resource_requests if r.get("status") == "승인")),
-            ("권한요청", sum(1 for r in admin_requests if r.get("status") == "대기")),
-            ("권한승인", sum(1 for r in admin_requests if r.get("status") == "승인")),
         ]
     else:
-        my_resource = [r for r in resource_requests if r.get("user_id") == user.get("user_id")]
-        my_admin = [r for r in admin_requests if r.get("user_id") == user.get("user_id")]
+        user_id = user.get("user_id")
+        my_questions = [q for q in questions if q.get("user_id") == user_id]
+        my_resource = [r for r in resource_requests if r.get("user_id") == user_id]
         items = [
-            ("내 요청", len(my_resource)),
-            ("승인", sum(1 for r in my_resource if r.get("status") == "승인")),
-            ("대기", sum(1 for r in my_resource if r.get("status") == "대기")),
-            ("권한신청", len(my_admin)),
+            ("내 질문", len(my_questions)),
+            ("오늘질문", sum(1 for q in my_questions if q.get("created_at", "").startswith(today))),
+            ("자료요청", len(my_resource)),
+            ("자료승인", sum(1 for r in my_resource if r.get("status") == "승인")),
         ]
+
     cards = "".join(
         f"<div class='sidebar-mini-card'><div class='sidebar-mini-num'>{value}</div><div class='sidebar-mini-label'>{esc(label)}</div></div>"
         for label, value in items
@@ -612,6 +618,12 @@ def inject_css() -> None:
             background:#FFFFFF; border: 1px solid var(--line); border-radius: 20px;
             padding: 18px 22px; margin-bottom: 20px; font-size:18px;
             box-shadow: 0 8px 20px rgba(31,47,63,0.05);
+        }
+        [data-testid="stHorizontalBlock"] .stButton button {
+            min-height: 58px;
+            border-radius: 16px;
+            font-weight: 900;
+            font-size: 18px;
         }
         .stTabs [data-baseweb="tab-list"] {
             gap: 12px !important;
@@ -1067,7 +1079,7 @@ def login_page() -> None:
         .sidebar-bottom-spacer {{ height: 16px !important; }}
         </style>
         <div class="login-hero">
-            <img src="{FIRE_EMBLEM_DATA_URI}" alt="충남소방 로고">
+            <img src="{FIRE_EMBLEM_DATA_URI}" alt="소방 상징 이미지">
             <h1 class="login-hero-title">{APP_NAME}</h1>
             <div class="login-hero-subtitle">소방공무원 행정·복무 업무 보조 서비스</div>
         </div>
@@ -1113,6 +1125,9 @@ def login_page() -> None:
             new_id = st.text_input("사용할 아이디", max_chars=30, help="영문, 숫자, _, - 조합 권장")
             new_pw = st.text_input("비밀번호", type="password")
             new_pw2 = st.text_input("비밀번호 확인", type="password")
+            agree_notice = st.checkbox("본 서비스는 업무 참고용이며, 최종 업무처리는 담당 부서와 공식 자료로 확인합니다.")
+            agree_privacy = st.checkbox("개인정보·민감정보·보안자료를 입력하지 않겠습니다.")
+            agree_questions = st.checkbox("질문 내용은 본인과 운영 목적의 관리자만 확인할 수 있음을 확인했습니다.")
             joined = st.form_submit_button("회원가입", type="primary", use_container_width=True)
         if joined:
             users = load_json("users", [])
@@ -1122,6 +1137,8 @@ def login_page() -> None:
                 st.error("비밀번호는 8자 이상으로 입력하십시오.")
             elif new_pw != new_pw2:
                 st.error("비밀번호 확인이 일치하지 않습니다.")
+            elif not (agree_notice and agree_privacy and agree_questions):
+                st.error("회원가입 전 확인 항목을 모두 체크하십시오.")
             elif any(u.get("user_id") == new_id for u in users):
                 st.error("이미 사용 중인 아이디입니다.")
             else:
@@ -2014,69 +2031,76 @@ def latest_admin_request_for_user(user_id: str) -> dict[str, Any] | None:
     return sorted(requests, key=lambda x: x.get("created_at", ""), reverse=True)[0]
 
 
-def sidebar_admin_request_box(user: dict[str, Any]) -> None:
-    st.sidebar.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+def create_admin_request(user: dict[str, Any], reason: str, source_label: str) -> tuple[bool, str]:
+    """관리자 권한 신청을 저장한다."""
+    reason = reason.strip()
+    if not reason:
+        return False, "신청 사유를 입력하십시오."
+
+    latest = latest_admin_request_for_user(user.get("user_id", ""))
+    if latest and latest.get("status") == "대기":
+        return False, "이미 처리 대기 중인 관리자 권한 신청이 있습니다."
+
+    admin_requests = load_json("admin_requests", [])
+    record = {
+        "id": uid("admin_req"),
+        "user_id": user["user_id"],
+        "reason": reason,
+        "status": "대기",
+        "admin_memo": "",
+        "created_at": now_iso(),
+        "processed_at": "",
+        "processed_by": "",
+    }
+    admin_requests.append(record)
+    save_json("admin_requests", admin_requests)
+
+    users = load_json("users", [])
+    for item in users:
+        if item.get("user_id") == user.get("user_id"):
+            item["admin_request_reason"] = reason
+            item["admin_request_status"] = "대기"
+    save_json("users", users)
+
+    add_audit(user["user_id"], "ADMIN_REQUEST_CREATE", record["id"], source_label)
+    return True, "관리자 권한 신청이 접수되었습니다."
+
+
+def top_admin_request_panel(user: dict[str, Any]) -> None:
+    """우상단 권한 요청 버튼에서 열리는 신청 패널."""
     if user.get("role") == "admin":
-        st.sidebar.markdown(
-            """
-            <div style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.14);border-radius:16px;padding:15px;margin-bottom:12px;">
-                <b>관리자 권한</b><br>
-                <span style="font-size:14px;line-height:1.45;">현재 관리자 계정입니다.</span>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        st.info("현재 관리자 계정입니다.")
         return
 
     latest = latest_admin_request_for_user(user.get("user_id", ""))
     if latest and latest.get("status") == "대기":
-        st.sidebar.markdown(
-            f"""
-            <div style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.14);border-radius:16px;padding:15px;margin-bottom:12px;">
-                <b>관리자 권한 신청</b><br>
-                <span style="font-size:14px;line-height:1.45;">처리상태: 대기</span>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        st.info("관리자 권한 신청이 처리 대기 중입니다.")
         return
 
     if latest and latest.get("status") == "거부":
-        st.sidebar.caption("최근 관리자 권한 신청이 거부되었습니다. 필요 시 사유를 보완해 다시 신청할 수 있습니다.")
+        st.caption("최근 신청이 거부되었습니다. 필요 시 사유를 보완해 다시 신청할 수 있습니다.")
     elif latest and latest.get("status") == "승인":
-        st.sidebar.caption("최근 관리자 권한 신청이 승인되었습니다. 다시 로그인하면 권한이 반영됩니다.")
+        st.caption("최근 신청이 승인되었습니다. 다시 로그인하면 권한이 반영됩니다.")
 
-    with st.sidebar.expander("관리자 권한 신청", expanded=False):
-        st.caption("관리자 권한이 필요한 사유를 작성하십시오. 관리자가 승인 또는 거부 처리합니다.")
-        reason = st.text_area("신청 사유", max_chars=300, key="sidebar_admin_request_reason")
-        if st.button("권한 신청", key="sidebar_admin_request_submit", use_container_width=True):
-            if not reason.strip():
-                st.error("신청 사유를 입력하십시오.")
-            else:
-                admin_requests = load_json("admin_requests", [])
-                record = {
-                    "id": uid("admin_req"),
-                    "user_id": user["user_id"],
-                    "reason": reason.strip(),
-                    "status": "대기",
-                    "admin_memo": "",
-                    "created_at": now_iso(),
-                    "processed_at": "",
-                    "processed_by": "",
-                }
-                admin_requests.append(record)
-                save_json("admin_requests", admin_requests)
+    with st.form("top_admin_request_form"):
+        reason = st.text_area("관리자 권한 신청 사유", max_chars=300, key="top_admin_request_reason")
+        col_submit, col_cancel = st.columns(2)
+        with col_submit:
+            submitted = st.form_submit_button("신청 제출", type="primary", use_container_width=True)
+        with col_cancel:
+            cancelled = st.form_submit_button("닫기", use_container_width=True)
 
-                users = load_json("users", [])
-                for item in users:
-                    if item.get("user_id") == user.get("user_id"):
-                        item["admin_request_reason"] = reason.strip()
-                        item["admin_request_status"] = "대기"
-                save_json("users", users)
-
-                add_audit(user["user_id"], "ADMIN_REQUEST_CREATE", record["id"], "사이드바 관리자 권한 신청")
-                st.success("관리자 권한 신청이 접수되었습니다.")
-                st.rerun()
+    if submitted:
+        ok, msg = create_admin_request(user, reason, "우상단 관리자 권한 신청")
+        if ok:
+            st.session_state["show_top_admin_request"] = False
+            st.success(msg)
+            st.rerun()
+        else:
+            st.error(msg)
+    if cancelled:
+        st.session_state["show_top_admin_request"] = False
+        st.rerun()
 
 
 def admin_permission_requests() -> None:
@@ -2173,7 +2197,7 @@ def sidebar_menu() -> str:
     st.sidebar.markdown(
         f"""
         <div style="padding: 6px 2px 14px 2px;">
-            <div class="sidebar-logo"><img src="{SAEMAE_LOGO_DATA_URI}" alt="충남소방 로고"></div>
+            <div class="sidebar-logo"><img src="{SAEMAE_LOGO_DATA_URI}" alt="소방 상징 이미지"></div>
             <div style="font-size:25px;font-weight:900;margin-top:12px;letter-spacing:-0.03em;line-height:1.15;">{APP_NAME}</div>
             <div style="font-size:15px;opacity:.92;font-weight:800;margin-top:6px;">{APP_VERSION}</div>
         </div>
@@ -2203,8 +2227,6 @@ def sidebar_menu() -> str:
         unsafe_allow_html=True,
     )
 
-    sidebar_admin_request_box(user)
-
     st.sidebar.markdown("<div class='sidebar-bottom-spacer'></div>", unsafe_allow_html=True)
     if st.sidebar.button("로그아웃", key="sidebar_bottom_logout"):
         logout()
@@ -2215,15 +2237,36 @@ def topbar() -> None:
     user = current_user()
     assert user is not None
     role_label = "관리자" if user.get("role") == "admin" else "일반 사용자"
-    st.markdown(
-        f"""
-        <div class="topbar">
-            <div><b>{APP_NAME}</b> <span class="badge">{esc(role_label)}</span></div>
-            <div class="muted">{datetime.now().strftime('%Y-%m-%d %H:%M')}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+
+    left, request_col, logout_col = st.columns([7.2, 1.3, 1.1])
+    with left:
+        st.markdown(
+            f"""
+            <div class="topbar">
+                <div><b>{APP_NAME}</b> <span class="badge">{esc(role_label)}</span></div>
+                <div class="muted">{datetime.now().strftime('%Y-%m-%d %H:%M')}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    with request_col:
+        if user.get("role") != "admin":
+            if st.button("권한 요청", key="top_admin_request_open_btn", use_container_width=True):
+                st.session_state["show_top_admin_request"] = not st.session_state.get("show_top_admin_request", False)
+        else:
+            st.markdown("<div style='height:50px;'></div>", unsafe_allow_html=True)
+
+    with logout_col:
+        if st.button("로그아웃", key="topbar_logout", use_container_width=True):
+            logout()
+
+    if st.session_state.get("show_top_admin_request", False):
+        with st.container():
+            st.markdown("<div class='section-card'><h3>관리자 권한 요청</h3>", unsafe_allow_html=True)
+            top_admin_request_panel(user)
+            st.markdown("</div>", unsafe_allow_html=True)
+
 
 def main() -> None:
     st.set_page_config(page_title=APP_NAME, layout="wide", initial_sidebar_state="expanded")
