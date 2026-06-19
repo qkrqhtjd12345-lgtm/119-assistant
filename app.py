@@ -58,7 +58,7 @@ VISIBILITY_LABELS = {
 }
 
 VISIBLE_TO_USER = {"Public", "User"}
-RESOURCE_CATEGORIES = ["법령", "조례", "훈령", "내부 지침", "기타"]
+RESOURCE_CATEGORIES = ["복무", "법령", "조례", "감사", "예산", "인사", "교육", "장비", "기타"]
 QUESTION_CATEGORIES = ["복무", "병가", "연가", "출장", "교육", "초과근무", "인사", "감사", "예산", "기타"]
 QUESTION_STATUS = ["정상", "자동차단", "삭제요청", "비공개"]
 ADMIN_VIEW_PURPOSES = ["오류 확인", "오남용 점검", "사용자 민원 대응", "개인정보·보안자료 신고 처리", "서비스 품질 개선"]
