@@ -36,7 +36,7 @@ import pandas as pd
 import streamlit as st
 
 APP_NAME = "충남119행정비서"
-APP_VERSION = "v1.0.6 MVP"
+APP_VERSION = "v1.0.7 MVP"
 DATA_DIR = Path(__file__).parent / "data"
 SESSION_TIMEOUT_SECONDS = 10 * 60
 
@@ -977,20 +977,20 @@ def login_page() -> None:
         }}
 
         /* 로그인 화면: 카드 없이 정돈된 공공기관형 레이아웃, 입력칸은 너무 길거나 좁지 않게 */
-        div[data-testid="stForm"] {
+        div[data-testid="stForm"] {{
             max-width: 800px !important;
             margin: 0 auto !important;
-        }
-        .login-section-title {
+        }}
+        .login-section-title {{
             max-width: 800px !important;
             margin-left: auto !important;
             margin-right: auto !important;
-        }
-        .login-notice-box {
+        }}
+        .login-notice-box {{
             max-width: 800px !important;
             margin-left: auto !important;
             margin-right: auto !important;
-        }
+        }}
         div[data-testid="stForm"] {{
             border: 0 !important;
             box-shadow: none !important;
@@ -1039,32 +1039,32 @@ def login_page() -> None:
         }}
 
         /* v1.0.5: 좌측 메뉴 가시성 최우선 보정 */
-        [data-testid="stSidebar"] { min-width: 420px !important; width: 420px !important; }
-        [data-testid="stSidebar"] * { font-size: 20px !important; }
-        [data-testid="stSidebar"] div[role="radiogroup"] > label {
+        [data-testid="stSidebar"] {{ min-width: 420px !important; width: 420px !important; }}
+        [data-testid="stSidebar"] * {{ font-size: 20px !important; }}
+        [data-testid="stSidebar"] div[role="radiogroup"] > label {{
             min-height: 92px !important;
             padding: 26px 28px !important;
             border-radius: 24px !important;
             margin: 12px 0 !important;
             border: 1px solid rgba(255,255,255,0.20) !important;
             background: rgba(255,255,255,0.08) !important;
-        }
-        [data-testid="stSidebar"] div[role="radiogroup"] > label p {
+        }}
+        [data-testid="stSidebar"] div[role="radiogroup"] > label p {{
             font-size: 29px !important;
             font-weight: 900 !important;
             letter-spacing: -0.03em !important;
-        }
-        [data-testid="stSidebar"] .stButton button {
+        }}
+        [data-testid="stSidebar"] .stButton button {{
             min-height: 68px !important;
             font-size: 22px !important;
             border-radius: 18px !important;
-        }
-        .sidebar-logo img { width: 260px !important; height: 116px !important; object-fit: contain !important; }
-        .sidebar-mini-grid { gap: 16px !important; margin: 18px 0 24px 0 !important; }
-        .sidebar-mini-card { min-height: 112px !important; padding: 20px 16px !important; }
-        .sidebar-mini-num { font-size: 40px !important; }
-        .sidebar-mini-label { font-size: 18px !important; }
-        .sidebar-bottom-spacer { height: 16px !important; }
+        }}
+        .sidebar-logo img {{ width: 260px !important; height: 116px !important; object-fit: contain !important; }}
+        .sidebar-mini-grid {{ gap: 16px !important; margin: 18px 0 24px 0 !important; }}
+        .sidebar-mini-card {{ min-height: 112px !important; padding: 20px 16px !important; }}
+        .sidebar-mini-num {{ font-size: 40px !important; }}
+        .sidebar-mini-label {{ font-size: 18px !important; }}
+        .sidebar-bottom-spacer {{ height: 16px !important; }}
         </style>
         <div class="login-hero">
             <img src="{FIRE_EMBLEM_DATA_URI}" alt="충남소방 로고">
