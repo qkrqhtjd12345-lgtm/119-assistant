@@ -203,7 +203,7 @@ st.markdown(f"""
     }}
 
     /* 큰 둥근 질문 입력 박스 (Claude 스타일) */
-    .big-search div[data-testid="stTextArea"] textarea {{
+    div[data-testid="stTextArea"] textarea {{
         background: {WHITE} !important;
         border: 1.5px solid {BORDER_GRAY} !important;
         border-radius: 18px !important;
@@ -213,15 +213,14 @@ st.markdown(f"""
         box-shadow: 0 2px 10px rgba(0,0,0,0.05) !important;
         transition: all 0.2s ease !important;
     }}
-    .big-search div[data-testid="stTextArea"] textarea:focus {{
+    div[data-testid="stTextArea"] textarea:focus {{
         border-color: {NAVY} !important;
         box-shadow: 0 4px 16px rgba(28,58,92,0.12) !important;
     }}
-    .big-search div[data-testid="stTextArea"] textarea::placeholder {{
+    div[data-testid="stTextArea"] textarea::placeholder {{
         color: #9AA0A6 !important;
         font-size: 17px !important;
     }}
-    .big-search label {{ display: none !important; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -323,7 +322,6 @@ def home_page():
         </div>
         """, unsafe_allow_html=True)
 
-        st.markdown('<div class="big-search">', unsafe_allow_html=True)
         question = st.text_area(
             "질문",
             placeholder="메시지를 입력하세요...",
@@ -331,7 +329,6 @@ def home_page():
             height=130,
             key="home_question"
         )
-        st.markdown('</div>', unsafe_allow_html=True)
         ask = st.button("질문하기")
 
         if question and ask:
