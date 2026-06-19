@@ -36,7 +36,7 @@ import pandas as pd
 import streamlit as st
 
 APP_NAME = "충남119행정비서"
-APP_VERSION = "v1.0.3 MVP"
+APP_VERSION = "v1.0.5 MVP"
 DATA_DIR = Path(__file__).parent / "data"
 SESSION_TIMEOUT_SECONDS = 10 * 60
 
@@ -50,11 +50,14 @@ FILES = {
     "admin_requests": DATA_DIR / "admin_requests.json",
 }
 
-LOGO_PATH = Path(__file__).parent / "assets" / "fire_logo.png"
+LOGO_PATH = Path(__file__).parent / "assets" / "fire_emblem_clean.png"
+if not LOGO_PATH.exists():
+    LOGO_PATH = Path(__file__).parent / "assets" / "fire_logo.png"
 if LOGO_PATH.exists():
-    SAEMAE_LOGO_DATA_URI = "data:image/png;base64," + base64.b64encode(LOGO_PATH.read_bytes()).decode("ascii")
+    FIRE_EMBLEM_DATA_URI = "data:image/png;base64," + base64.b64encode(LOGO_PATH.read_bytes()).decode("ascii")
 else:
-    SAEMAE_LOGO_DATA_URI = ""
+    FIRE_EMBLEM_DATA_URI = ""
+SAEMAE_LOGO_DATA_URI = FIRE_EMBLEM_DATA_URI
 
 VISIBILITY_LABELS = {
     "Private": "비공개",
@@ -698,18 +701,18 @@ def inject_css() -> None:
         /* v1.0.3: 대형 업무용 화면 보정 */
         html, body, [class*="css"], .stMarkdown, .stText, p, div { font-size: 20px; }
         .block-container { max-width: 1520px !important; padding-top: 2.2rem !important; }
-        [data-testid="stSidebar"] { min-width: 365px !important; width: 365px !important; }
+        [data-testid="stSidebar"] { min-width: 430px !important; width: 430px !important; }
         [data-testid="stSidebar"] section { padding-top: 18px !important; }
         [data-testid="stSidebar"] .stRadio div[role="radiogroup"] > label,
         [data-testid="stSidebar"] label[data-baseweb="radio"] {
-            min-height: 66px !important;
-            padding: 17px 20px !important;
-            margin: 8px 0 !important;
-            border-radius: 18px !important;
+            min-height: 82px !important;
+            padding: 22px 24px !important;
+            margin: 12px 0 !important;
+            border-radius: 22px !important;
         }
         [data-testid="stSidebar"] .stRadio div[role="radiogroup"] label p,
         [data-testid="stSidebar"] label[data-baseweb="radio"] p {
-            font-size: 21px !important;
+            font-size: 26px !important;
             font-weight: 900 !important;
         }
         .sidebar-mini-grid {
@@ -722,11 +725,11 @@ def inject_css() -> None:
             background: rgba(255,255,255,0.10);
             border: 1px solid rgba(255,255,255,0.20);
             border-radius: 16px;
-            padding: 13px 12px;
-            min-height: 82px;
+            padding: 18px 16px;
+            min-height: 104px;
         }
-        .sidebar-mini-num { font-size: 28px !important; font-weight: 900; line-height: 1.05; }
-        .sidebar-mini-label { font-size: 14px !important; font-weight: 800; opacity: .92; margin-top: 7px; }
+        .sidebar-mini-num { font-size: 36px !important; font-weight: 900; line-height: 1.05; }
+        .sidebar-mini-label { font-size: 18px !important; font-weight: 800; opacity: .92; margin-top: 7px; }
         .sidebar-bottom-spacer { height: 22px; }
         .section-card, .metric-card, .resource-card, .notice-card, .question-card {
             padding: 34px 38px !important;
@@ -760,9 +763,54 @@ def inject_css() -> None:
         .login-wrap h1 { font-size: 48px !important; line-height: 1.08 !important; white-space: normal !important; }
         .login-wrap .muted { font-size: 20px !important; }
         .logo-mark { width: 320px !important; height: 150px !important; margin-bottom: 24px !important; }
-        .sidebar-logo img { width: 148px !important; height: 78px !important; }
+        .sidebar-logo img { width: 220px !important; height: 100px !important; }
         .stTabs [data-baseweb="tab"], [data-testid="stTabs"] button[role="tab"] { min-height: 66px !important; }
         .stTabs [data-baseweb="tab"] p, [data-testid="stTabs"] button[role="tab"] p { font-size: 21px !important; }
+
+        /* v1.0.4: 본 화면 가시성 재정리 */
+        .block-container { max-width: 1500px !important; padding-top: 2.0rem !important; }
+        [data-testid="stSidebar"] { min-width: 400px !important; width: 400px !important; }
+        [data-testid="stSidebar"] .sidebar-logo img {
+            width: 210px !important;
+            height: 90px !important;
+            object-fit: contain !important;
+            background: transparent !important;
+            border: none !important;
+            padding: 0 !important;
+        }
+        [data-testid="stSidebar"] .stRadio div[role="radiogroup"] > label,
+        [data-testid="stSidebar"] label[data-baseweb="radio"] {
+            min-height: 86px !important;
+            padding: 23px 24px !important;
+            margin: 11px 0 !important;
+            border-radius: 22px !important;
+            background: rgba(255,255,255,0.11) !important;
+            border: 1px solid rgba(255,255,255,0.22) !important;
+        }
+        [data-testid="stSidebar"] .stRadio div[role="radiogroup"] label p,
+        [data-testid="stSidebar"] label[data-baseweb="radio"] p {
+            font-size: 27px !important;
+            line-height: 1.15 !important;
+            font-weight: 900 !important;
+        }
+        .sidebar-mini-grid { gap: 14px !important; margin: 18px 0 22px 0 !important; }
+        .sidebar-mini-card {
+            min-height: 108px !important;
+            padding: 18px 16px !important;
+            border-radius: 20px !important;
+            background: rgba(255,255,255,0.12) !important;
+        }
+        .sidebar-mini-num { font-size: 38px !important; }
+        .sidebar-mini-label { font-size: 17px !important; }
+        .section-card, .metric-card, .resource-card, .notice-card, .question-card {
+            padding: 38px 44px !important;
+            border-radius: 26px !important;
+        }
+        [data-testid="stTextInput"] input,
+        [data-testid="stTextArea"] textarea,
+        [data-testid="stSelectbox"] div {
+            font-size: 21px !important;
+        }
 </style>
         """,
         unsafe_allow_html=True,
@@ -795,86 +843,179 @@ def render_common_disclaimer() -> None:
 
 def login_page() -> None:
     st.markdown(
-        """
+        f"""
         <style>
-        .block-container {
-            max-width: 760px !important;
-            padding-top: 2.3rem !important;
-            padding-left: 1.2rem !important;
-            padding-right: 1.2rem !important;
-        }
-        .login-wrap {
-            max-width: 680px !important;
-            margin: 14px auto 24px auto !important;
-            padding: 42px 48px !important;
-            text-align: left;
-        }
-        .login-wrap h1 {
-            font-size: 48px !important;
-            line-height: 1.08 !important;
-            white-space: normal !important;
-            word-break: keep-all !important;
-        }
-        .login-wrap .muted {
+        .block-container {{
+            max-width: 980px !important;
+            padding-top: 2.4rem !important;
+            padding-left: 1.8rem !important;
+            padding-right: 1.8rem !important;
+        }}
+        .login-hero {{
+            text-align: center;
+            padding: 4px 0 28px 0;
+            margin: 0 auto 12px auto;
+        }}
+        .login-hero img {{
+            width: 330px;
+            height: auto;
+            max-height: 150px;
+            object-fit: contain;
+            margin-bottom: 20px;
+        }}
+        .login-hero-title {{
+            color: #263238;
+            font-size: 38px;
+            line-height: 1.15;
+            font-weight: 900;
+            letter-spacing: -0.035em;
+            margin: 0;
+        }}
+        .login-hero-subtitle {{
+            color: #667085;
+            font-size: 20px;
+            font-weight: 800;
+            margin-top: 14px;
+        }}
+        .login-divider {{
+            height: 1px;
+            background: #D9E0E3;
+            margin: 24px 0 28px 0;
+        }}
+        .stTabs [data-baseweb="tab-list"] {{
+            gap: 22px !important;
+            border-bottom: 1px solid #D9E0E3 !important;
+            margin-bottom: 26px !important;
+        }}
+        .stTabs [data-baseweb="tab"],
+        [data-testid="stTabs"] button[role="tab"] {{
+            flex: 0 0 auto !important;
+            min-height: 54px !important;
+            border: 0 !important;
+            border-radius: 0 !important;
+            background: transparent !important;
+            padding: 0 6px 14px 6px !important;
+            margin-bottom: -1px !important;
+        }}
+        .stTabs [data-baseweb="tab"] p,
+        [data-testid="stTabs"] button[role="tab"] p {{
             font-size: 20px !important;
-            line-height: 1.55 !important;
-            font-weight: 700;
-        }
-        .logo-mark {
-            width: 330px !important;
-            height: 150px !important;
-            border-radius: 20px !important;
-        }
+            font-weight: 900 !important;
+            color: #344054 !important;
+        }}
+        .stTabs [aria-selected="true"],
+        [data-testid="stTabs"] button[role="tab"][aria-selected="true"] {{
+            background: transparent !important;
+            border-bottom: 3px solid #1F2F3F !important;
+        }}
+        .stTabs [aria-selected="true"] p,
+        [data-testid="stTabs"] button[role="tab"][aria-selected="true"] p {{
+            color: #1F2F3F !important;
+        }}
+
+        /* 로그인 화면: 카드 없이 정돈된 공공기관형 레이아웃, 입력칸은 너무 길거나 좁지 않게 */
         div[data-testid="stForm"] {
-            border-radius: 26px !important;
+            max-width: 760px !important;
+            margin: 0 auto !important;
+        }
+        .login-section-title {
+            max-width: 760px !important;
+            margin-left: auto !important;
+            margin-right: auto !important;
+        }
+        .login-notice-box {
+            max-width: 760px !important;
+            margin-left: auto !important;
+            margin-right: auto !important;
+        }
+        div[data-testid="stForm"] {{
+            border: 0 !important;
+            box-shadow: none !important;
+            background: transparent !important;
+            padding: 0 !important;
+        }}
+        .login-section-title {{
+            font-size: 38px;
+            color: #263238;
+            font-weight: 900;
+            letter-spacing: -0.03em;
+            margin: 0 0 24px 0;
+        }}
+        label p {{
+            font-size: 20px !important;
+            font-weight: 900 !important;
+            color: #344054 !important;
+        }}
+        [data-testid="stTextInput"] input {{
+            min-height: 66px !important;
+            font-size: 22px !important;
+            border-radius: 10px !important;
+            background: #F2F5F9 !important;
             border: 1px solid #D9E0E3 !important;
-            padding: 32px 34px 34px 34px !important;
-            background: #FFFFFF !important;
-            box-shadow: 0 12px 30px rgba(31,47,63,0.08) !important;
-        }
-        div[data-testid="stForm"] input {
-            min-height: 64px !important;
-            font-size: 21px !important;
-        }
-        div[data-testid="stForm"] button[kind="primary"] {
+            padding: 14px 18px !important;
+        }}
+        .stFormSubmitButton button[kind="primary"] {{
+            min-height: 68px !important;
+            font-size: 26px !important;
+            font-weight: 900 !important;
+            border-radius: 8px !important;
             background: #1F2F3F !important;
             color: #FFFFFF !important;
             border: 1px solid #1F2F3F !important;
-            min-height: 64px !important;
-            font-size: 20px !important;
+            margin-top: 18px !important;
+        }}
+        .login-notice-box {{
+            border: 1px solid #D9E0E3;
+            border-radius: 14px;
+            background: #FFFFFF;
+            padding: 18px 20px;
+            color: #344054;
+            font-size: 17px;
+            line-height: 1.6;
+            margin-top: 28px;
+        }}
+
+        /* v1.0.5: 좌측 메뉴 가시성 최우선 보정 */
+        [data-testid="stSidebar"] { min-width: 430px !important; width: 430px !important; }
+        [data-testid="stSidebar"] * { font-size: 20px !important; }
+        [data-testid="stSidebar"] div[role="radiogroup"] > label {
+            min-height: 84px !important;
+            padding: 22px 24px !important;
+            border-radius: 24px !important;
+            margin: 12px 0 !important;
+            border: 1px solid rgba(255,255,255,0.20) !important;
+            background: rgba(255,255,255,0.08) !important;
         }
-        .stTabs [data-baseweb="tab-list"] {
-            gap: 14px !important;
-            margin-bottom: 14px !important;
+        [data-testid="stSidebar"] div[role="radiogroup"] > label p {
+            font-size: 27px !important;
+            font-weight: 900 !important;
+            letter-spacing: -0.03em !important;
         }
-        .stTabs [data-baseweb="tab"],
-        [data-testid="stTabs"] button[role="tab"] {
-            min-height: 62px !important;
+        [data-testid="stSidebar"] .stButton button {
+            min-height: 68px !important;
+            font-size: 22px !important;
             border-radius: 18px !important;
         }
-        .stTabs [data-baseweb="tab"] p,
-        [data-testid="stTabs"] button[role="tab"] p {
-            font-size: 20px !important;
-            font-weight: 900 !important;
-        }
+        .sidebar-logo img { width: 240px !important; height: 108px !important; object-fit: contain !important; }
+        .sidebar-mini-grid { gap: 16px !important; margin: 18px 0 24px 0 !important; }
+        .sidebar-mini-card { min-height: 112px !important; padding: 20px 16px !important; }
+        .sidebar-mini-num { font-size: 40px !important; }
+        .sidebar-mini-label { font-size: 18px !important; }
+        .sidebar-bottom-spacer { height: 16px !important; }
         </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    st.markdown(
-        f"""
-        <div class="login-wrap">
-            <div class="logo-mark"><img src="{SAEMAE_LOGO_DATA_URI}" alt="충남소방 로고"></div>
-            <h1 style="margin-bottom:8px;">{APP_NAME}</h1>
-            <div class="muted">소방공무원 행정·복무 업무 보조 서비스</div>
+        <div class="login-hero">
+            <img src="{FIRE_EMBLEM_DATA_URI}" alt="충남소방 로고">
+            <h1 class="login-hero-title">{APP_NAME}</h1>
+            <div class="login-hero-subtitle">소방공무원 행정·복무 업무 보조 서비스</div>
         </div>
+        <div class="login-divider"></div>
         """,
         unsafe_allow_html=True,
     )
 
     tab_login, tab_join = st.tabs(["로그인", "회원가입"])
     with tab_login:
+        st.markdown("<div class='login-section-title'>로그인</div>", unsafe_allow_html=True)
         with st.form("login_form"):
             user_id = st.text_input("아이디", max_chars=30)
             password = st.text_input("비밀번호", type="password")
@@ -900,10 +1041,10 @@ def login_page() -> None:
                 st.rerun()
 
     with tab_join:
-        box(
-            "info",
-            "가입 안내",
-            "개인정보 최소화를 위해 이름, 전화번호, 소속, 주소를 받지 않습니다. 아이디와 비밀번호만 입력하십시오.",
+        st.markdown("<div class='login-section-title'>회원가입</div>", unsafe_allow_html=True)
+        st.markdown(
+            "<div class='login-notice-box'><b>가입 안내</b><br>개인정보 최소화를 위해 이름, 전화번호, 소속, 주소를 받지 않습니다. 아이디와 비밀번호만 입력하십시오.</div>",
+            unsafe_allow_html=True,
         )
         with st.form("join_form"):
             new_id = st.text_input("사용할 아이디", max_chars=30, help="영문, 숫자, _, - 조합 권장")
