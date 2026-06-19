@@ -36,7 +36,7 @@ import pandas as pd
 import streamlit as st
 
 APP_NAME = "충남119행정비서"
-APP_VERSION = "v1.0.1 MVP"
+APP_VERSION = "v1.0.3 MVP"
 DATA_DIR = Path(__file__).parent / "data"
 SESSION_TIMEOUT_SECONDS = 10 * 60
 
@@ -50,28 +50,11 @@ FILES = {
     "admin_requests": DATA_DIR / "admin_requests.json",
 }
 
-SAEMAE_LOGO_SVG = """
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="새매 로고">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#1F2F3F"/>
-      <stop offset="1" stop-color="#2D4053"/>
-    </linearGradient>
-    <linearGradient id="wing" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#FFFFFF"/>
-      <stop offset="1" stop-color="#D9E0E3"/>
-    </linearGradient>
-  </defs>
-  <rect width="120" height="120" rx="26" fill="url(#bg)"/>
-  <path d="M18 70 C36 43, 61 32, 103 29 C77 41, 65 57, 53 89 C47 73, 35 68, 18 70 Z" fill="url(#wing)" opacity="0.95"/>
-  <path d="M55 46 C66 34, 82 27, 104 29 C91 35, 80 43, 70 57 C64 55, 59 52, 55 46 Z" fill="#F28C6B"/>
-  <path d="M63 55 C74 56, 85 62, 98 76 C79 73, 63 70, 47 88 C49 76, 54 65, 63 55 Z" fill="#FFFFFF" opacity="0.9"/>
-  <circle cx="79" cy="39" r="3.2" fill="#172635"/>
-  <path d="M88 39 L107 34 L92 48 Z" fill="#F28C6B"/>
-  <path d="M29 78 C39 80, 47 84, 54 93 C42 91, 30 88, 20 83 Z" fill="#F28C6B" opacity="0.9"/>
-</svg>
-""".strip()
-SAEMAE_LOGO_DATA_URI = "data:image/svg+xml;base64," + base64.b64encode(SAEMAE_LOGO_SVG.encode("utf-8")).decode("ascii")
+LOGO_PATH = Path(__file__).parent / "assets" / "fire_logo.png"
+if LOGO_PATH.exists():
+    SAEMAE_LOGO_DATA_URI = "data:image/png;base64," + base64.b64encode(LOGO_PATH.read_bytes()).decode("ascii")
+else:
+    SAEMAE_LOGO_DATA_URI = ""
 
 VISIBILITY_LABELS = {
     "Private": "비공개",
@@ -407,6 +390,60 @@ def normalize_existing_data() -> None:
 
 
 
+
+def month_key_from_iso(value: str) -> str:
+    """ISO 날짜 문자열을 YYYY-MM 월 키로 변환한다."""
+    if not value:
+        return "미상"
+    return str(value)[:7]
+
+
+def monthly_count_df(records: list[dict[str, Any]], date_field: str, label: str, months: int = 12) -> pd.DataFrame:
+    """최근 months개월 기준 월별 건수를 0 포함 데이터프레임으로 만든다."""
+    today = datetime.now().replace(day=1)
+    keys = []
+    for i in range(months - 1, -1, -1):
+        year = today.year
+        month = today.month - i
+        while month <= 0:
+            year -= 1
+            month += 12
+        keys.append(f"{year:04d}-{month:02d}")
+    counter = {k: 0 for k in keys}
+    for record in records:
+        key = month_key_from_iso(record.get(date_field, ""))
+        if key in counter:
+            counter[key] += 1
+    return pd.DataFrame({"월": keys, label: [counter[k] for k in keys]})
+
+
+def sidebar_stats_html(user: dict[str, Any]) -> str:
+    """왼쪽 사이드바 요약 통계 HTML."""
+    resource_requests = load_json("resource_requests", [])
+    admin_requests = load_json("admin_requests", [])
+    if user.get("role") == "admin":
+        items = [
+            ("자료요청", sum(1 for r in resource_requests if r.get("status") == "대기")),
+            ("자료승인", sum(1 for r in resource_requests if r.get("status") == "승인")),
+            ("권한요청", sum(1 for r in admin_requests if r.get("status") == "대기")),
+            ("권한승인", sum(1 for r in admin_requests if r.get("status") == "승인")),
+        ]
+    else:
+        my_resource = [r for r in resource_requests if r.get("user_id") == user.get("user_id")]
+        my_admin = [r for r in admin_requests if r.get("user_id") == user.get("user_id")]
+        items = [
+            ("내 요청", len(my_resource)),
+            ("승인", sum(1 for r in my_resource if r.get("status") == "승인")),
+            ("대기", sum(1 for r in my_resource if r.get("status") == "대기")),
+            ("권한신청", len(my_admin)),
+        ]
+    cards = "".join(
+        f"<div class='sidebar-mini-card'><div class='sidebar-mini-num'>{value}</div><div class='sidebar-mini-label'>{esc(label)}</div></div>"
+        for label, value in items
+    )
+    return f"<div class='sidebar-mini-grid'>{cards}</div>"
+
+
 # -----------------------------------------------------------------------------
 # 스타일
 # -----------------------------------------------------------------------------
@@ -484,24 +521,28 @@ def inject_css() -> None:
         h2 { font-size: 34px !important; }
         h3 { font-size: 26px !important; }
         .login-wrap {
-            max-width: 420px;
-            margin: 26px auto 18px auto;
+            max-width: 560px;
+            margin: 24px auto 20px auto;
             background: #FFFFFF;
             border: 1px solid var(--line);
-            border-radius: 26px;
-            padding: 30px 32px;
-            box-shadow: 0 16px 36px rgba(31,47,63,0.10);
+            border-radius: 28px;
+            padding: 34px 38px;
+            box-shadow: 0 18px 42px rgba(31,47,63,0.12);
         }
-        .login-wrap h1 { font-size: 34px !important; }
+        .login-wrap h1 {
+            font-size: 42px !important;
+            line-height: 1.12 !important;
+            white-space: nowrap;
+        }
         .logo-mark {
-            width: 86px; height: 86px; border-radius: 22px;
+            width: 260px; height: 118px; border-radius: 18px;
             display:flex; align-items:center; justify-content:center;
-            margin-bottom: 14px; overflow:hidden;
+            margin: 0 0 22px 0; overflow:hidden;
             border: 1px solid var(--line);
             background: #FFFFFF;
         }
-        .logo-mark img { width: 100%; height: 100%; object-fit: cover; display:block; }
-        .sidebar-logo img { width: 52px; height: 52px; border-radius: 15px; object-fit: cover; border:1px solid rgba(255,255,255,0.22); }
+        .logo-mark img { width: 100%; height: 100%; object-fit: contain; display:block; padding: 8px; }
+        .sidebar-logo img { width: 118px; height: 62px; border-radius: 12px; object-fit: contain; background:#FFFFFF; padding:5px; border:1px solid rgba(255,255,255,0.22); }
         .section-card, .metric-card, .resource-card, .notice-card, .question-card {
             background: #FFFFFF;
             border: 1px solid var(--line);
@@ -653,7 +694,76 @@ def inject_css() -> None:
             min-height: 56px !important;
             font-size: 18px !important;
         }
-        </style>
+        
+        /* v1.0.3: 대형 업무용 화면 보정 */
+        html, body, [class*="css"], .stMarkdown, .stText, p, div { font-size: 20px; }
+        .block-container { max-width: 1520px !important; padding-top: 2.2rem !important; }
+        [data-testid="stSidebar"] { min-width: 365px !important; width: 365px !important; }
+        [data-testid="stSidebar"] section { padding-top: 18px !important; }
+        [data-testid="stSidebar"] .stRadio div[role="radiogroup"] > label,
+        [data-testid="stSidebar"] label[data-baseweb="radio"] {
+            min-height: 66px !important;
+            padding: 17px 20px !important;
+            margin: 8px 0 !important;
+            border-radius: 18px !important;
+        }
+        [data-testid="stSidebar"] .stRadio div[role="radiogroup"] label p,
+        [data-testid="stSidebar"] label[data-baseweb="radio"] p {
+            font-size: 21px !important;
+            font-weight: 900 !important;
+        }
+        .sidebar-mini-grid {
+            display:grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin: 14px 0 16px 0;
+        }
+        .sidebar-mini-card {
+            background: rgba(255,255,255,0.10);
+            border: 1px solid rgba(255,255,255,0.20);
+            border-radius: 16px;
+            padding: 13px 12px;
+            min-height: 82px;
+        }
+        .sidebar-mini-num { font-size: 28px !important; font-weight: 900; line-height: 1.05; }
+        .sidebar-mini-label { font-size: 14px !important; font-weight: 800; opacity: .92; margin-top: 7px; }
+        .sidebar-bottom-spacer { height: 22px; }
+        .section-card, .metric-card, .resource-card, .notice-card, .question-card {
+            padding: 34px 38px !important;
+            border-radius: 28px !important;
+            margin-bottom: 26px !important;
+        }
+        .metric-card { min-height: 135px; }
+        .metric-card .num { font-size: 48px !important; }
+        .metric-card .label { font-size: 19px !important; }
+        .notice-card b { font-size: 26px !important; }
+        .question-card h2, .question-hero h2 { font-size: 50px !important; }
+        .question-card .muted { font-size: 22px !important; }
+        .question-note { font-size: 20px !important; }
+        [data-testid="stTextInput"] input,
+        [data-testid="stTextArea"] textarea {
+            font-size: 21px !important;
+            min-height: 62px !important;
+        }
+        textarea[aria-label="질문 내용"] { min-height: 380px !important; }
+        button[kind="primary"], .stFormSubmitButton button[kind="primary"], .stButton button {
+            min-height: 60px !important;
+            font-size: 19px !important;
+            border-radius: 17px !important;
+        }
+        .topbar { padding: 22px 26px !important; font-size: 20px !important; }
+        .login-wrap {
+            max-width: 680px !important;
+            padding: 38px 46px !important;
+            margin: 22px auto 22px auto !important;
+        }
+        .login-wrap h1 { font-size: 48px !important; line-height: 1.08 !important; white-space: normal !important; }
+        .login-wrap .muted { font-size: 20px !important; }
+        .logo-mark { width: 320px !important; height: 150px !important; margin-bottom: 24px !important; }
+        .sidebar-logo img { width: 148px !important; height: 78px !important; }
+        .stTabs [data-baseweb="tab"], [data-testid="stTabs"] button[role="tab"] { min-height: 66px !important; }
+        .stTabs [data-baseweb="tab"] p, [data-testid="stTabs"] button[role="tab"] p { font-size: 21px !important; }
+</style>
         """,
         unsafe_allow_html=True,
     )
@@ -688,41 +798,63 @@ def login_page() -> None:
         """
         <style>
         .block-container {
-            max-width: 980px !important;
-            padding-top: 2.0rem !important;
+            max-width: 760px !important;
+            padding-top: 2.3rem !important;
+            padding-left: 1.2rem !important;
+            padding-right: 1.2rem !important;
         }
         .login-wrap {
-            max-width: 430px !important;
-            margin: 18px auto 18px auto !important;
-            padding: 34px 34px !important;
+            max-width: 680px !important;
+            margin: 14px auto 24px auto !important;
+            padding: 42px 48px !important;
             text-align: left;
         }
         .login-wrap h1 {
-            font-size: 36px !important;
-            line-height: 1.16 !important;
+            font-size: 48px !important;
+            line-height: 1.08 !important;
+            white-space: normal !important;
+            word-break: keep-all !important;
+        }
+        .login-wrap .muted {
+            font-size: 20px !important;
+            line-height: 1.55 !important;
+            font-weight: 700;
+        }
+        .logo-mark {
+            width: 330px !important;
+            height: 150px !important;
+            border-radius: 20px !important;
         }
         div[data-testid="stForm"] {
-            border-radius: 22px !important;
+            border-radius: 26px !important;
             border: 1px solid #D9E0E3 !important;
-            padding: 22px 24px 24px 24px !important;
+            padding: 32px 34px 34px 34px !important;
             background: #FFFFFF !important;
+            box-shadow: 0 12px 30px rgba(31,47,63,0.08) !important;
         }
         div[data-testid="stForm"] input {
-            min-height: 54px !important;
-            font-size: 18px !important;
+            min-height: 64px !important;
+            font-size: 21px !important;
+        }
+        div[data-testid="stForm"] button[kind="primary"] {
+            background: #1F2F3F !important;
+            color: #FFFFFF !important;
+            border: 1px solid #1F2F3F !important;
+            min-height: 64px !important;
+            font-size: 20px !important;
         }
         .stTabs [data-baseweb="tab-list"] {
-            gap: 10px !important;
-            margin-bottom: 12px !important;
+            gap: 14px !important;
+            margin-bottom: 14px !important;
         }
         .stTabs [data-baseweb="tab"],
         [data-testid="stTabs"] button[role="tab"] {
-            min-height: 58px !important;
-            border-radius: 17px !important;
+            min-height: 62px !important;
+            border-radius: 18px !important;
         }
         .stTabs [data-baseweb="tab"] p,
         [data-testid="stTabs"] button[role="tab"] p {
-            font-size: 18px !important;
+            font-size: 20px !important;
             font-weight: 900 !important;
         }
         </style>
@@ -730,84 +862,83 @@ def login_page() -> None:
         unsafe_allow_html=True,
     )
 
-    left, center, right = st.columns([1.05, 0.75, 1.05])
-    with center:
-        st.markdown(
-            f"""
-            <div class="login-wrap">
-                <div class="logo-mark"><img src="{SAEMAE_LOGO_DATA_URI}" alt="새매 로고"></div>
-                <h1 style="margin-bottom:4px;">{APP_NAME}</h1>
-                <div class="muted">소방공무원 행정·복무 업무 보조 서비스</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        tab_login, tab_join = st.tabs(["로그인", "회원가입"])
-        with tab_login:
-            with st.form("login_form"):
-                user_id = st.text_input("아이디", max_chars=30)
-                password = st.text_input("비밀번호", type="password")
-                submitted = st.form_submit_button("로그인", type="primary", use_container_width=True)
-            if submitted:
-                users = load_json("users", [])
-                user = next((u for u in users if u.get("user_id") == user_id), None)
-                if not user or not verify_password(password, user.get("password_hash", "")):
-                    st.error("아이디 또는 비밀번호가 올바르지 않습니다.")
-                    add_audit(user_id or "unknown", "LOGIN_FAIL", user_id, "로그인 실패")
-                elif not user.get("is_active", True):
-                    st.error("비활성화된 계정입니다. 관리자에게 문의하십시오.")
-                else:
-                    for item in users:
-                        if item.get("user_id") == user_id:
-                            item["last_login"] = now_iso()
-                            item["last_active"] = now_iso()
-                            item["force_logout"] = False
-                    save_json("users", users)
-                    st.session_state["user_id"] = user_id
-                    st.session_state["last_active_ts"] = time.time()
-                    add_audit(user_id, "LOGIN", user_id, "로그인 성공")
-                    st.rerun()
+    st.markdown(
+        f"""
+        <div class="login-wrap">
+            <div class="logo-mark"><img src="{SAEMAE_LOGO_DATA_URI}" alt="충남소방 로고"></div>
+            <h1 style="margin-bottom:8px;">{APP_NAME}</h1>
+            <div class="muted">소방공무원 행정·복무 업무 보조 서비스</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-        with tab_join:
-            box(
-                "info",
-                "가입 안내",
-                "개인정보 최소화를 위해 이름, 전화번호, 소속, 주소를 받지 않습니다. 아이디와 비밀번호만 입력하십시오.",
-            )
-            with st.form("join_form"):
-                new_id = st.text_input("사용할 아이디", max_chars=30, help="영문, 숫자, _, - 조합 권장")
-                new_pw = st.text_input("비밀번호", type="password")
-                new_pw2 = st.text_input("비밀번호 확인", type="password")
-                joined = st.form_submit_button("회원가입", type="primary", use_container_width=True)
-            if joined:
-                users = load_json("users", [])
-                if not re.fullmatch(r"[A-Za-z0-9_-]{4,30}", new_id or ""):
-                    st.error("아이디는 영문, 숫자, _, - 조합 4~30자로 입력하십시오.")
-                elif len(new_pw) < 8:
-                    st.error("비밀번호는 8자 이상으로 입력하십시오.")
-                elif new_pw != new_pw2:
-                    st.error("비밀번호 확인이 일치하지 않습니다.")
-                elif any(u.get("user_id") == new_id for u in users):
-                    st.error("이미 사용 중인 아이디입니다.")
-                else:
-                    users.append(
-                        {
-                            "user_id": new_id,
-                            "password_hash": hash_password(new_pw),
-                            "role": "user",
-                            "created_at": now_iso(),
-                            "last_login": "",
-                            "last_active": "",
-                            "is_active": True,
-                            "force_logout": False,
-                            "admin_request_reason": "",
-                            "admin_request_status": "",
-                            "memo": "",
-                        }
-                    )
-                    save_json("users", users)
-                    add_audit(new_id, "REGISTER", new_id, "회원가입")
-                    st.success("가입이 완료되었습니다. 로그인하십시오.")
+    tab_login, tab_join = st.tabs(["로그인", "회원가입"])
+    with tab_login:
+        with st.form("login_form"):
+            user_id = st.text_input("아이디", max_chars=30)
+            password = st.text_input("비밀번호", type="password")
+            submitted = st.form_submit_button("로그인", type="primary", use_container_width=True)
+        if submitted:
+            users = load_json("users", [])
+            user = next((u for u in users if u.get("user_id") == user_id), None)
+            if not user or not verify_password(password, user.get("password_hash", "")):
+                st.error("아이디 또는 비밀번호가 올바르지 않습니다.")
+                add_audit(user_id or "unknown", "LOGIN_FAIL", user_id, "로그인 실패")
+            elif not user.get("is_active", True):
+                st.error("비활성화된 계정입니다. 관리자에게 문의하십시오.")
+            else:
+                for item in users:
+                    if item.get("user_id") == user_id:
+                        item["last_login"] = now_iso()
+                        item["last_active"] = now_iso()
+                        item["force_logout"] = False
+                save_json("users", users)
+                st.session_state["user_id"] = user_id
+                st.session_state["last_active_ts"] = time.time()
+                add_audit(user_id, "LOGIN", user_id, "로그인 성공")
+                st.rerun()
+
+    with tab_join:
+        box(
+            "info",
+            "가입 안내",
+            "개인정보 최소화를 위해 이름, 전화번호, 소속, 주소를 받지 않습니다. 아이디와 비밀번호만 입력하십시오.",
+        )
+        with st.form("join_form"):
+            new_id = st.text_input("사용할 아이디", max_chars=30, help="영문, 숫자, _, - 조합 권장")
+            new_pw = st.text_input("비밀번호", type="password")
+            new_pw2 = st.text_input("비밀번호 확인", type="password")
+            joined = st.form_submit_button("회원가입", type="primary", use_container_width=True)
+        if joined:
+            users = load_json("users", [])
+            if not re.fullmatch(r"[A-Za-z0-9_-]{4,30}", new_id or ""):
+                st.error("아이디는 영문, 숫자, _, - 조합 4~30자로 입력하십시오.")
+            elif len(new_pw) < 8:
+                st.error("비밀번호는 8자 이상으로 입력하십시오.")
+            elif new_pw != new_pw2:
+                st.error("비밀번호 확인이 일치하지 않습니다.")
+            elif any(u.get("user_id") == new_id for u in users):
+                st.error("이미 사용 중인 아이디입니다.")
+            else:
+                users.append(
+                    {
+                        "user_id": new_id,
+                        "password_hash": hash_password(new_pw),
+                        "role": "user",
+                        "created_at": now_iso(),
+                        "last_login": "",
+                        "last_active": "",
+                        "is_active": True,
+                        "force_logout": False,
+                        "admin_request_reason": "",
+                        "admin_request_status": "",
+                        "memo": "",
+                    }
+                )
+                save_json("users", users)
+                add_audit(new_id, "REGISTER", new_id, "회원가입")
+                st.success("가입이 완료되었습니다. 로그인하십시오.")
 
     render_common_disclaimer()
 
@@ -964,7 +1095,13 @@ def home_page() -> None:
     questions = [q for q in load_json("questions", []) if not q.get("deleted") and not q.get("blocked")]
     if questions:
         top_df = pd.DataFrame(questions).groupby("category").size().reset_index(name="건수").sort_values("건수", ascending=False).head(5)
-        st.bar_chart(top_df.set_index("category"))
+        cols = st.columns(min(5, len(top_df)))
+        for idx, row in top_df.reset_index(drop=True).iterrows():
+            with cols[idx]:
+                st.markdown(
+                    f"<div class='metric-card'><div class='num'>{int(row['건수'])}</div><div class='label'>{esc(row['category'])}</div></div>",
+                    unsafe_allow_html=True,
+                )
     else:
         st.info("아직 누적 질문 통계가 없습니다. TOP 5에는 질문 내용 없이 분야별 건수만 표시됩니다.")
 
@@ -1101,71 +1238,37 @@ def admin_dashboard() -> None:
     questions = load_json("questions", [])
     resources = load_json("resources", [])
     requests = load_json("resource_requests", [])
+    admin_requests = load_json("admin_requests", [])
 
     today = today_str()
     metrics = [
         ("가입자 수", len(users)),
-        ("활성 사용자 수", sum(1 for u in users if u.get("is_active", True))),
-        ("누적 질문 수", len(questions)),
-        ("오늘 질문 수", sum(1 for q in questions if q.get("created_at", "").startswith(today))),
-        ("자동차단 질문 수", sum(1 for q in questions if q.get("blocked"))),
-        ("자료 요청 대기 수", sum(1 for r in requests if r.get("status") == "대기")),
-        ("등록 자료 수", len(resources)),
-        ("공개 자료 수", sum(1 for r in resources if normalize_visibility(r.get("visibility")) == "Public")),
-        ("비공개 자료 수", sum(1 for r in resources if normalize_visibility(r.get("visibility")) != "Public")),
+        ("활성 사용자", sum(1 for u in users if u.get("is_active", True))),
+        ("누적 질문", len(questions)),
+        ("오늘 질문", sum(1 for q in questions if q.get("created_at", "").startswith(today))),
+        ("자료요청 대기", sum(1 for r in requests if r.get("status") == "대기")),
+        ("자료요청 승인", sum(1 for r in requests if r.get("status") == "승인")),
+        ("권한신청 대기", sum(1 for r in admin_requests if r.get("status") == "대기")),
+        ("권한신청 승인", sum(1 for r in admin_requests if r.get("status") == "승인")),
+        ("등록 자료", len(resources)),
     ]
 
-    st.markdown("### 대시보드 통계")
+    st.markdown("### 대시보드")
     cols = st.columns(3)
     for idx, (label, value) in enumerate(metrics):
         with cols[idx % 3]:
             st.markdown(f"<div class='metric-card'><div class='num'>{value}</div><div class='label'>{esc(label)}</div></div>", unsafe_allow_html=True)
 
-    st.markdown("### 대시보드 도표")
+    st.markdown("### 월별 흐름")
     chart_col1, chart_col2 = st.columns(2)
     with chart_col1:
-        st.markdown("#### 질문 분야별 건수")
-        if questions:
-            df_q = pd.DataFrame(questions)
-            if "category" in df_q:
-                st.bar_chart(df_q.groupby("category").size())
-            else:
-                st.info("질문 분야 데이터가 없습니다.")
-        else:
-            st.info("질문 데이터가 없습니다.")
-
+        st.markdown("#### 월별 가입자 수")
+        monthly_users = monthly_count_df(users, "created_at", "가입자 수")
+        st.bar_chart(monthly_users.set_index("월"))
     with chart_col2:
-        st.markdown("#### 질문 상태별 건수")
-        if questions:
-            df_q = pd.DataFrame(questions)
-            if "status" in df_q:
-                st.bar_chart(df_q.groupby("status").size())
-            else:
-                st.info("질문 상태 데이터가 없습니다.")
-        else:
-            st.info("질문 데이터가 없습니다.")
-
-    chart_col3, chart_col4 = st.columns(2)
-    with chart_col3:
-        st.markdown("#### 자료 공개/비공개")
-        if resources:
-            df_r = pd.DataFrame(
-                [{"공개상태": "공개" if normalize_visibility(r.get("visibility")) == "Public" else "비공개"} for r in resources]
-            )
-            st.bar_chart(df_r.groupby("공개상태").size())
-        else:
-            st.info("등록 자료가 없습니다.")
-
-    with chart_col4:
-        st.markdown("#### 자료 요청 상태")
-        if requests:
-            df_req = pd.DataFrame(requests)
-            if "status" in df_req:
-                st.bar_chart(df_req.groupby("status").size())
-            else:
-                st.info("자료 요청 상태 데이터가 없습니다.")
-        else:
-            st.info("자료 요청 데이터가 없습니다.")
+        st.markdown("#### 월별 질문 수")
+        monthly_questions = monthly_count_df(questions, "created_at", "질문 수")
+        st.bar_chart(monthly_questions.set_index("월"))
 
 def admin_question_history() -> None:
     admin = current_user()
@@ -1203,21 +1306,11 @@ def admin_question_history() -> None:
             continue
         filtered.append(q)
 
-    st.markdown("### 질문 이력 도표")
-    if filtered:
-        chart_col1, chart_col2 = st.columns(2)
-        df_filtered = pd.DataFrame(filtered)
-        with chart_col1:
-            st.markdown("#### 분야별 질문")
-            if "category" in df_filtered:
-                st.bar_chart(df_filtered.groupby("category").size())
-        with chart_col2:
-            st.markdown("#### 상태별 질문")
-            if "status" in df_filtered:
-                st.bar_chart(df_filtered.groupby("status").size())
-    else:
+    if not filtered:
         st.info("조건에 맞는 질문 이력이 없습니다.")
         return
+
+    st.markdown("### 질문 이력 목록")
 
     summary = [
         {
@@ -1875,15 +1968,16 @@ def sidebar_menu() -> str:
 
     st.sidebar.markdown(
         f"""
-        <div style="padding: 8px 2px 18px 2px;">
-            <div class="sidebar-logo"><img src="{SAEMAE_LOGO_DATA_URI}" alt="새매 로고"></div>
-            <div style="font-size:24px;font-weight:900;margin-top:10px;letter-spacing:-0.03em;">{APP_NAME}</div>
-            <div style="font-size:14px;opacity:.9;font-weight:700;">{APP_VERSION}</div>
+        <div style="padding: 6px 2px 14px 2px;">
+            <div class="sidebar-logo"><img src="{SAEMAE_LOGO_DATA_URI}" alt="충남소방 로고"></div>
+            <div style="font-size:25px;font-weight:900;margin-top:12px;letter-spacing:-0.03em;line-height:1.15;">{APP_NAME}</div>
+            <div style="font-size:15px;opacity:.92;font-weight:800;margin-top:6px;">{APP_VERSION}</div>
         </div>
-        <div style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.16);border-radius:16px;padding:16px;margin-bottom:16px;">
-            <b>{esc(user.get('user_id'))}</b><br>
-            <span style="font-size:15px;">권한: {esc(user.get('role'))}</span>
+        <div style="background:rgba(255,255,255,0.10);border:1px solid rgba(255,255,255,0.18);border-radius:18px;padding:17px 18px;margin-bottom:14px;">
+            <div style="font-size:20px;font-weight:900;">{esc(user.get('user_id'))}</div>
+            <div style="font-size:15px;font-weight:800;opacity:.92;margin-top:5px;">권한: {esc(user.get('role'))}</div>
         </div>
+        {sidebar_stats_html(user)}
         """,
         unsafe_allow_html=True,
     )
@@ -1895,43 +1989,37 @@ def sidebar_menu() -> str:
 
     st.sidebar.markdown(
         """
-        <div style="margin-top:20px;background:rgba(255,255,255,0.06);border-left:4px solid #F28C6B;border-radius:10px;padding:12px;">
-            <b>운영 안내</b><br>
-            <span style="font-size:14px;line-height:1.55;">개인정보·민감정보·보안자료 입력 금지</span><br>
-            <span style="font-size:14px;line-height:1.55;">정확한 업무처리는 담당 부서 확인</span>
+        <div style="margin-top:16px;background:rgba(255,255,255,0.07);border-left:5px solid #F28C6B;border-radius:14px;padding:15px 16px;">
+            <b style="font-size:18px;">운영 안내</b><br>
+            <span style="font-size:15px;line-height:1.6;font-weight:700;">개인정보·민감정보·보안자료 입력 금지</span><br>
+            <span style="font-size:15px;line-height:1.6;font-weight:700;">정확한 업무처리는 담당 부서 확인</span>
         </div>
-        <div style="height:18px;"></div>
+        <div class="sidebar-bottom-spacer"></div>
         """,
         unsafe_allow_html=True,
     )
 
     sidebar_admin_request_box(user)
 
+    st.sidebar.markdown("<div class='sidebar-bottom-spacer'></div>", unsafe_allow_html=True)
     if st.sidebar.button("로그아웃", key="sidebar_bottom_logout"):
         logout()
 
     return menu
 
-
 def topbar() -> None:
     user = current_user()
     assert user is not None
-    col1, col2 = st.columns([5, 1])
-    with col1:
-        role_label = "관리자" if user.get("role") == "admin" else "일반 사용자"
-        st.markdown(
-            f"""
-            <div class="topbar">
-                <div><b>{APP_NAME}</b> <span class="badge">{esc(role_label)}</span></div>
-                <div class="muted">{datetime.now().strftime('%Y-%m-%d %H:%M')}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    with col2:
-        if st.button("로그아웃", key="top_logout", use_container_width=True):
-            logout()
-
+    role_label = "관리자" if user.get("role") == "admin" else "일반 사용자"
+    st.markdown(
+        f"""
+        <div class="topbar">
+            <div><b>{APP_NAME}</b> <span class="badge">{esc(role_label)}</span></div>
+            <div class="muted">{datetime.now().strftime('%Y-%m-%d %H:%M')}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 def main() -> None:
     st.set_page_config(page_title=APP_NAME, layout="wide", initial_sidebar_state="expanded")
