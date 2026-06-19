@@ -50,19 +50,18 @@ if "faq_counts" not in st.session_state:
     }
 
 # ========================================
-# 🎨 소방청 공식 색상
+# 🎨 Claude 스타일 색상
 # ========================================
-FIRE_ORANGE = "#FF8833"      # 소방청 주 색상
-LIGHT_ORANGE = "#FFB84D"     # 밝은 오렌지
-NAVY = "#1A3A52"             # 신뢰감 있는 네이비
-DARK_NAVY = "#0F1B2E"        # 진한 네이비
-LIGHT_BG = "#F5F7FA"         # 밝은 배경
+PRIMARY_BLUE = "#2B65EC"     # 주 색상 (파란색)
+LIGHT_BLUE = "#5B8DEE"       # 밝은 파란색
+HOVER_BLUE = "#1A4BA8"       # 호버 (진한 파란색)
+GRAY_BG = "#F5F7FA"          # 밝은 배경
+DARK_GRAY = "#6B7280"        # 회색 텍스트
+TEXT_DARK = "#1F2937"        # 진한 텍스트
 WHITE = "#FFFFFF"            # 흰색
-TEXT_DARK = "#2D3436"        # 진한 텍스트
-TEXT_MUTED = "#636E72"       # 회색 텍스트
-SUCCESS = "#27AE60"          # 초록
-WARNING = "#E8A707"          # 황금색
-DANGER = "#E74C3C"           # 빨강
+SUCCESS = "#10B981"          # 초록
+WARNING = "#F59E0B"          # 주황
+DANGER = "#EF4444"           # 빨강
 
 # ========================================
 # 🎨 CSS 스타일 (소방청 공식)
@@ -70,286 +69,283 @@ DANGER = "#E74C3C"           # 빨강
 st.markdown(f"""
 <style>
     * {{
-        font-family: 'Segoe UI', 'Roboto', '본고딕', '나눔고딕', sans-serif;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
     }}
 
     .stApp {{
-        background: linear-gradient(135deg, {LIGHT_BG} 0%, #E8EEF5 100%);
+        background: {GRAY_BG};
     }}
 
     /* ===== 네비게이션 사이드바 ===== */
     section[data-testid="stSidebar"] {{
-        background: linear-gradient(180deg, {DARK_NAVY} 0%, {NAVY} 100%);
-        box-shadow: 2px 0 12px rgba(15, 27, 46, 0.3);
+        background: {WHITE};
+        box-shadow: 1px 0 4px rgba(0, 0, 0, 0.08);
     }}
 
     section[data-testid="stSidebar"] * {{
-        color: {WHITE} !important;
+        color: {TEXT_DARK} !important;
     }}
 
     section[data-testid="stSidebar"] .stRadio > label {{
-        color: {WHITE} !important;
-        font-weight: 700;
-        padding: 14px 12px;
+        color: {TEXT_DARK} !important;
+        font-weight: 600;
+        padding: 12px 14px;
         border-radius: 8px;
-        transition: all 0.3s ease;
-        margin-bottom: 4px;
+        transition: all 0.2s ease;
+        margin-bottom: 6px;
     }}
 
     section[data-testid="stSidebar"] .stRadio > label:hover {{
-        background-color: rgba(255, 136, 51, 0.2);
-        border-left: 4px solid {FIRE_ORANGE};
+        background-color: #F0F4FF;
     }}
 
     section[data-testid="stSidebar"] .stRadio > label[aria-selected="true"] {{
-        background-color: rgba(255, 136, 51, 0.3);
-        border-left: 4px solid {FIRE_ORANGE};
+        background-color: #EEF4FF;
+        color: {PRIMARY_BLUE} !important;
+        font-weight: 700;
     }}
 
     /* ===== 헤더 배너 ===== */
     .header-banner {{
-        background: linear-gradient(135deg, {FIRE_ORANGE} 0%, #FF7722 100%);
-        color: {WHITE};
+        background: {WHITE};
+        color: {TEXT_DARK};
         padding: 40px 42px;
-        border-radius: 14px;
+        border-radius: 12px;
         margin-bottom: 32px;
-        box-shadow: 0 12px 32px rgba(255, 136, 51, 0.25);
-        border-left: 8px solid {LIGHT_ORANGE};
-        position: relative;
-        overflow: hidden;
-    }}
-
-    .header-banner::before {{
-        content: '';
-        position: absolute;
-        top: -50%;
-        right: -20%;
-        width: 300px;
-        height: 300px;
-        background: rgba(255, 255, 255, 0.05);
-        border-radius: 50%;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+        border-left: 4px solid {PRIMARY_BLUE};
     }}
 
     .header-title {{
-        font-size: 48px;
-        font-weight: 900;
+        font-size: 44px;
+        font-weight: 700;
         margin: 0;
-        letter-spacing: -0.8px;
+        letter-spacing: -0.5px;
         display: flex;
         align-items: center;
-        gap: 16px;
-        position: relative;
-        z-index: 1;
+        gap: 12px;
+        color: {TEXT_DARK};
     }}
 
     .header-subtitle {{
         font-size: 16px;
-        opacity: 0.95;
+        color: {DARK_GRAY};
         margin-top: 10px;
         font-weight: 500;
-        position: relative;
-        z-index: 1;
     }}
 
     /* ===== 카드 ===== */
     .card {{
         background: {WHITE};
-        border: 1px solid #E8EBED;
-        border-radius: 12px;
-        padding: 28px;
-        margin-bottom: 24px;
-        box-shadow: 0 4px 16px rgba(15, 27, 46, 0.08);
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        border: 1px solid #E5E7EB;
+        border-radius: 8px;
+        padding: 24px;
+        margin-bottom: 20px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+        transition: all 0.2s ease;
     }}
 
     .card:hover {{
-        box-shadow: 0 12px 32px rgba(255, 136, 51, 0.15);
-        transform: translateY(-4px);
-        border-color: {FIRE_ORANGE};
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        border-color: {PRIMARY_BLUE};
     }}
 
     .card-title {{
-        color: {FIRE_ORANGE};
-        font-size: 22px;
-        font-weight: 900;
-        margin-bottom: 16px;
-        border-bottom: 3px solid {FIRE_ORANGE};
-        padding-bottom: 12px;
+        color: {PRIMARY_BLUE};
+        font-size: 20px;
+        font-weight: 700;
+        margin-bottom: 14px;
+        border-bottom: 2px solid {PRIMARY_BLUE};
+        padding-bottom: 10px;
     }}
 
     /* ===== 정보박스 ===== */
     .info-box {{
-        background: linear-gradient(135deg, rgba(255, 136, 51, 0.05) 0%, rgba(255, 184, 77, 0.05) 100%);
-        border-left: 6px solid {FIRE_ORANGE};
-        border-radius: 10px;
-        padding: 22px 26px;
-        margin-bottom: 28px;
-        box-shadow: 0 4px 14px rgba(255, 136, 51, 0.1);
+        background: #F0F4FF;
+        border-left: 4px solid {PRIMARY_BLUE};
+        border-radius: 8px;
+        padding: 20px 24px;
+        margin-bottom: 24px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
     }}
 
     .info-box b {{
-        color: {FIRE_ORANGE};
-        font-size: 16px;
+        color: {PRIMARY_BLUE};
+        font-size: 15px;
     }}
 
     /* ===== 경고박스 ===== */
     .warning-box {{
-        background: linear-gradient(135deg, rgba(232, 167, 7, 0.05) 0%, rgba(255, 193, 7, 0.05) 100%);
-        border-left: 6px solid {WARNING};
-        border-radius: 10px;
-        padding: 22px 26px;
-        margin-bottom: 28px;
+        background: #FEF3C7;
+        border-left: 4px solid {WARNING};
+        border-radius: 8px;
+        padding: 20px 24px;
+        margin-bottom: 24px;
         color: {TEXT_DARK};
     }}
 
     .success-box {{
-        background: linear-gradient(135deg, rgba(39, 174, 96, 0.05) 0%, rgba(46, 204, 113, 0.05) 100%);
-        border-left: 6px solid {SUCCESS};
-        border-radius: 10px;
-        padding: 22px 26px;
-        margin-bottom: 28px;
+        background: #ECFDF5;
+        border-left: 4px solid {SUCCESS};
+        border-radius: 8px;
+        padding: 20px 24px;
+        margin-bottom: 24px;
         color: {TEXT_DARK};
     }}
 
     /* ===== 입력 필드 ===== */
     div[data-testid="stTextInput"] input {{
-        border-radius: 10px !important;
-        border: 2px solid #E8EBED !important;
-        padding: 14px 20px !important;
-        font-size: 16px !important;
+        border-radius: 8px !important;
+        border: 1px solid #E5E7EB !important;
+        padding: 12px 16px !important;
+        font-size: 15px !important;
         background-color: {WHITE} !important;
         color: {TEXT_DARK} !important;
-        transition: all 0.3s ease;
+        transition: all 0.2s ease;
     }}
 
     div[data-testid="stTextInput"] input:focus {{
-        border-color: {FIRE_ORANGE} !important;
-        box-shadow: 0 0 0 3px rgba(255, 136, 51, 0.15) !important;
+        border-color: {PRIMARY_BLUE} !important;
+        box-shadow: 0 0 0 3px rgba(43, 101, 236, 0.1) !important;
     }}
 
     div[data-testid="stTextArea"] textarea {{
-        border-radius: 10px !important;
-        border: 2px solid #E8EBED !important;
+        border-radius: 8px !important;
+        border: 1px solid #E5E7EB !important;
         font-family: inherit;
-        transition: all 0.3s ease;
+        transition: all 0.2s ease;
     }}
 
     div[data-testid="stTextArea"] textarea:focus {{
-        border-color: {FIRE_ORANGE} !important;
-        box-shadow: 0 0 0 3px rgba(255, 136, 51, 0.15) !important;
+        border-color: {PRIMARY_BLUE} !important;
+        box-shadow: 0 0 0 3px rgba(43, 101, 236, 0.1) !important;
     }}
 
     /* ===== 버튼 ===== */
     .stButton > button {{
         width: 100%;
-        border-radius: 10px;
+        border-radius: 8px;
         border: none;
-        background: linear-gradient(135deg, {FIRE_ORANGE} 0%, #FF7722 100%);
+        background: {PRIMARY_BLUE};
         color: {WHITE};
-        padding: 14px 24px;
-        font-weight: 800;
-        font-size: 16px;
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        box-shadow: 0 6px 16px rgba(255, 136, 51, 0.2);
+        padding: 12px 20px;
+        font-weight: 600;
+        font-size: 15px;
+        transition: all 0.2s ease;
+        box-shadow: 0 2px 6px rgba(43, 101, 236, 0.2);
     }}
 
     .stButton > button:hover {{
-        transform: translateY(-2px);
-        box-shadow: 0 10px 28px rgba(255, 136, 51, 0.3);
+        background: {HOVER_BLUE};
+        box-shadow: 0 4px 12px rgba(43, 101, 236, 0.25);
+        transform: translateY(-1px);
     }}
 
     .stButton > button:active {{
         transform: translateY(0);
     }}
 
-    /* ===== 탭 ===== */
+    /* ===== 탭 (Claude 스타일) ===== */
+    .stTabs [data-baseweb="tab-list"] {{
+        border-bottom: 1px solid #E5E7EB;
+        padding: 0;
+    }}
+
     .stTabs [data-baseweb="tab-list"] button {{
-        font-weight: 700;
-        border-bottom: 3px solid transparent;
-        color: {TEXT_MUTED};
-        transition: all 0.3s ease;
+        font-weight: 600;
+        color: {DARK_GRAY};
+        border-bottom: 2px solid transparent;
+        padding: 12px 16px;
+        margin-right: 8px;
+        transition: all 0.2s ease;
+        cursor: pointer;
+    }}
+
+    .stTabs [data-baseweb="tab-list"] button:hover {{
+        color: {PRIMARY_BLUE};
     }}
 
     .stTabs [data-baseweb="tab-list"] button[aria-selected="true"] {{
-        color: {FIRE_ORANGE};
-        border-bottom-color: {FIRE_ORANGE};
+        color: {PRIMARY_BLUE};
+        border-bottom: 2px solid {PRIMARY_BLUE};
+        background: none;
     }}
 
     /* ===== 상태 배지 ===== */
     .status-badge {{
         display: inline-block;
-        padding: 8px 16px;
-        border-radius: 20px;
-        font-weight: 700;
-        font-size: 14px;
+        padding: 6px 12px;
+        border-radius: 6px;
+        font-weight: 600;
+        font-size: 13px;
         white-space: nowrap;
     }}
 
     .status-pending {{
-        background: rgba(232, 167, 7, 0.2);
-        color: #E8A707;
+        background: #FEF3C7;
+        color: #92400E;
     }}
 
     .status-approved {{
-        background: rgba(39, 174, 96, 0.2);
-        color: #27AE60;
+        background: #ECFDF5;
+        color: #065F46;
     }}
 
     .status-rejected {{
-        background: rgba(231, 76, 60, 0.2);
-        color: #E74C3C;
+        background: #FEE2E2;
+        color: #7F1D1D;
     }}
 
     .status-hold {{
-        background: rgba(52, 152, 219, 0.2);
-        color: #3498DB;
+        background: #EFF6FF;
+        color: #0C4A6E;
     }}
 
     /* ===== FAQ 태그 ===== */
     .faq-pill {{
         display: inline-block;
         background: {WHITE};
-        border: 2px solid {FIRE_ORANGE};
-        border-radius: 20px;
-        padding: 10px 20px;
-        margin: 8px 8px 8px 0;
-        font-weight: 700;
-        color: {FIRE_ORANGE};
+        border: 1px solid #E5E7EB;
+        border-radius: 6px;
+        padding: 8px 16px;
+        margin: 6px 8px 6px 0;
+        font-weight: 500;
+        color: {TEXT_DARK};
         cursor: pointer;
-        transition: all 0.3s ease;
-        box-shadow: 0 2px 8px rgba(255, 136, 51, 0.1);
+        transition: all 0.2s ease;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
     }}
 
     .faq-pill:hover {{
-        background: {FIRE_ORANGE};
-        color: {WHITE};
-        transform: translateY(-2px);
-        box-shadow: 0 6px 16px rgba(255, 136, 51, 0.25);
+        background: #F0F4FF;
+        color: {PRIMARY_BLUE};
+        border-color: {PRIMARY_BLUE};
+        transform: translateY(-1px);
     }}
 
     /* ===== 사용자 정보 배지 ===== */
     .user-badge {{
-        background: linear-gradient(135deg, {FIRE_ORANGE} 0%, {LIGHT_ORANGE} 100%);
-        border-left: 4px solid {WHITE};
-        padding: 16px 20px;
-        border-radius: 10px;
-        font-weight: 700;
-        color: {WHITE};
-        box-shadow: 0 4px 16px rgba(255, 136, 51, 0.2);
+        background: {WHITE};
+        border-left: 4px solid {PRIMARY_BLUE};
+        padding: 14px 18px;
+        border-radius: 8px;
+        font-weight: 600;
+        color: {TEXT_DARK};
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
     }}
 
     /* ===== 테이블 ===== */
     .stDataFrame {{
-        border-radius: 12px !important;
+        border-radius: 8px !important;
         overflow: hidden !important;
-        box-shadow: 0 4px 12px rgba(45, 52, 54, 0.08) !important;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08) !important;
     }}
 
     /* ===== 구분선 ===== */
     .divider {{
         border: none;
-        border-top: 2px solid #E8EBED;
-        margin: 32px 0;
+        border-top: 1px solid #E5E7EB;
+        margin: 28px 0;
     }}
 
     /* ===== 반응형 ===== */
@@ -365,10 +361,10 @@ st.markdown(f"""
     /* ===== 푸터 ===== */
     .footer {{
         text-align: center;
-        color: {TEXT_MUTED};
+        color: {DARK_GRAY};
         font-size: 13px;
-        padding: 28px 20px;
-        border-top: 2px solid #E8EBED;
+        padding: 24px 20px;
+        border-top: 1px solid #E5E7EB;
         margin-top: 40px;
     }}
 </style>
@@ -378,10 +374,10 @@ st.markdown(f"""
 # 공통 함수
 # ========================================
 def show_header(title: str, subtitle: str = ""):
-    """소방청 스타일 헤더"""
+    """Claude 스타일 헤더"""
     st.markdown(f"""
     <div class="header-banner">
-        <div class="header-title">🚒 {title}</div>
+        <div class="header-title">{title}</div>
         <div class="header-subtitle">{subtitle}</div>
     </div>
     """, unsafe_allow_html=True)
@@ -459,18 +455,7 @@ def classify_question(q: str):
 # 로그인 페이지
 # ========================================
 def login_page():
-    col1, col2 = st.columns([1, 2])
-    
-    with col2:
-        show_header("충남119 복무AI", "충남 소방공무원을 위한 복무·행정 안내 서비스")
-    
-    with col1:
-        st.markdown(f"""
-        <div style="text-align: center; padding: 20px; background: linear-gradient(135deg, {FIRE_ORANGE} 0%, {LIGHT_ORANGE} 100%); border-radius: 12px; color: white;">
-            <div style="font-size: 48px;">🦅</div>
-            <div style="font-weight: 700; font-size: 14px; margin-top: 8px;">소방청</div>
-        </div>
-        """, unsafe_allow_html=True)
+    show_header("충남119 복무AI", "업무 정보 안내 서비스")
     
     show_info_box(
         "안전한 접속",
@@ -834,12 +819,12 @@ else:
     st.markdown("---")
     st.markdown(f"""
     <div class="footer">
-        <p>🚒 <b>충남119 복무AI</b> v2.0 | 소방청 공식 스타일</p>
+        <p><b>충남119 복무AI</b> v2.0</p>
         <p>충남소방본부 | 최종 업데이트: {datetime.now().strftime('%Y년 %m월 %d일')}</p>
         <p>
-            <a href="#" style="color: {FIRE_ORANGE}; text-decoration: none;">개인정보보호방침</a> | 
-            <a href="#" style="color: {FIRE_ORANGE}; text-decoration: none;">이용약관</a> | 
-            <a href="#" style="color: {FIRE_ORANGE}; text-decoration: none;">문의</a>
+            <a href="#" style="color: {PRIMARY_BLUE}; text-decoration: none;">개인정보보호방침</a> | 
+            <a href="#" style="color: {PRIMARY_BLUE}; text-decoration: none;">이용약관</a> | 
+            <a href="#" style="color: {PRIMARY_BLUE}; text-decoration: none;">문의</a>
         </p>
     </div>
     """, unsafe_allow_html=True)
