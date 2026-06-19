@@ -1328,7 +1328,7 @@ def login_page() -> None:
             <img src="{FIRE_EMBLEM_DATA_URI}" alt="소방 상징 이미지">
             <h1 class="login-hero-title">{APP_NAME}</h1>
             <div class="login-hero-subtitle">소방공무원 행정·복무 업무 보조 서비스</div>
-            <div class="official-notice">소방공무원을 위한 행정업무 AI비서입니다.</div>
+            <div class="official-notice">이 사이트는 충남소방본부가 제공·운영하는 공식 AI 서비스가 아닙니다.</div>
         </div>
         <div class="login-divider"></div>
         """,
