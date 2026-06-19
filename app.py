@@ -305,7 +305,7 @@ def login_page():
         )
         st.markdown(f"""
         <div style="text-align:center;padding:8px 0 20px 0;">
-            <div style="font-size:22px;font-weight:700;color:{TEXT_DARK};margin-bottom:8px;">충남119 복무AI</div>
+            <div style="font-size:22px;font-weight:700;color:{TEXT_DARK};margin-bottom:8px;">충남119 업무AI</div>
             <div style="font-size:14px;color:{TEXT_GRAY};">충남 소방공무원을 위한 업무 정보 안내 서비스</div>
         </div>
         """, unsafe_allow_html=True)
