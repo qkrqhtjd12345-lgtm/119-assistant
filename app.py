@@ -79,19 +79,19 @@ st.markdown(f"""
 
     /* 네모 박스형 메뉴 버튼 */
     section[data-testid="stSidebar"] div[role="radiogroup"] {{
-        gap: 8px;
+        gap: 12px;
         display: flex;
         flex-direction: column;
     }}
     section[data-testid="stSidebar"] div[role="radiogroup"] label {{
         background: rgba(255,255,255,0.06);
         border: 1px solid rgba(255,255,255,0.15);
-        border-radius: 8px;
-        padding: 14px 16px !important;
+        border-radius: 10px;
+        padding: 22px 18px !important;
         margin: 0 !important;
         cursor: pointer;
         transition: all 0.15s ease;
-        font-size: 15px !important;
+        font-size: 18px !important;
         font-weight: 600 !important;
         width: 100%;
     }}
@@ -506,7 +506,7 @@ if st.session_state.login_user is None:
     login_page()
 else:
     with st.sidebar:
-        st.markdown(f'<div style="padding:12px 0 20px 0;">{logo_html(220)}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div style="padding:12px 0 24px 0;">{logo_html(270)}</div>', unsafe_allow_html=True)
         st.markdown('<div class="menu-label">메뉴</div>', unsafe_allow_html=True)
 
     menu_list = ["홈", "법령·조례", "건의·신청"]
