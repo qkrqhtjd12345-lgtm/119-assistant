@@ -23,6 +23,7 @@ import hashlib
 import hmac
 import html
 import json
+from io import BytesIO
 import os
 import re
 import secrets
@@ -34,9 +35,10 @@ from urllib.parse import urlparse
 
 import pandas as pd
 import streamlit as st
+from PIL import Image
 
 APP_NAME = "충남119행정비서"
-APP_VERSION = "v1.0.12 MVP"
+APP_VERSION = "v1.0.13 MVP"
 DATA_DIR = Path(__file__).parent / "data"
 SESSION_TIMEOUT_SECONDS = 10 * 60
 
@@ -69,6 +71,16 @@ except Exception:
     FIRE_EMBLEM_DATA_URI = "data:image/png;base64," + _EMBEDDED_FIRE_EMBLEM_B64
 
 SAEMAE_LOGO_DATA_URI = FIRE_EMBLEM_DATA_URI
+
+
+def load_page_icon() -> Any:
+    """브라우저 탭 favicon으로 사용할 소방 상징 이미지를 불러옵니다."""
+    try:
+        if LOGO_PATH.exists():
+            return Image.open(LOGO_PATH)
+        return Image.open(BytesIO(base64.b64decode(_EMBEDDED_FIRE_EMBLEM_B64)))
+    except Exception:
+        return "🚒"
 
 VISIBILITY_LABELS = {
     "Private": "비공개",
@@ -1328,7 +1340,7 @@ def login_page() -> None:
             <img src="{FIRE_EMBLEM_DATA_URI}" alt="소방 상징 이미지">
             <h1 class="login-hero-title">{APP_NAME}</h1>
             <div class="login-hero-subtitle">소방공무원 행정·복무 업무 보조 서비스</div>
-            <div class="official-notice">이 사이트는 충남소방본부가 제공·운영하는 공식 AI 서비스가 아닙니다.</div>
+            <div class="official-notice">충남소방본부 제공 공식 AI가 아닌 비공식 참고 서비스입니다.</div>
         </div>
         <div class="login-divider"></div>
         """,
@@ -2612,7 +2624,7 @@ def topbar() -> None:
             <div class="topbar">
                 <div>
                             <b>{APP_NAME}</b> <span class="badge">{esc(role_label)}</span>
-                            <div class="official-mini">소방공무원을 위한 행정업무 AI비서입니다.</div>
+                            <div class="official-mini">충남소방본부 제공 공식 AI가 아닌 비공식 참고 서비스</div>
                         </div>
                         <div class="muted">{datetime.now().strftime('%Y-%m-%d %H:%M')}</div>
             </div>
@@ -2658,7 +2670,7 @@ def render_login_privacy_notice() -> None:
 
 
 def main() -> None:
-    st.set_page_config(page_title=APP_NAME, layout="wide", initial_sidebar_state="expanded")
+    st.set_page_config(page_title=APP_NAME, page_icon=load_page_icon(), layout="wide", initial_sidebar_state="expanded")
     init_storage()
     normalize_existing_data()
     inject_css()
