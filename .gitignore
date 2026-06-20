@@ -1,17 +1,33 @@
 # secrets
+
 .streamlit/secrets.toml
 secrets.toml
 .env
 
 # python cache
-__pycache__/
+
+**pycache**/
 *.pyc
 *.pyo
 
 # uploaded files
-data/uploads/
+
+# PDF 원본은 GitHub에 올리지 않고, AI 검색용 추출 txt만 올립니다.
+
+data/uploads/*
+!data/uploads/**/
+!data/uploads/*.txt
+!data/uploads/**/*.txt
+data/uploads/**/*.pdf
+data/uploads/**/*.hwp
+data/uploads/**/*.hwpx
+data/uploads/**/*.doc
+data/uploads/**/*.docx
+data/uploads/**/*.xls
+data/uploads/**/*.xlsx
 
 # runtime data
+
 data/users.json
 data/questions.json
 data/audit_logs.json
@@ -20,5 +36,6 @@ data/resource_requests.json
 data/delete_requests.json
 
 # system files
+
 .DS_Store
 Thumbs.db
