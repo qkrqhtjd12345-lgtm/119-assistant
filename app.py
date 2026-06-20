@@ -355,34 +355,71 @@ def require_admin() -> bool:
 # -----------------------------------------------------------------------------
 # 개인정보·민감정보 감지
 # -----------------------------------------------------------------------------
-BLOCK_PATTERNS: list[tuple[str, str]] = [
+# 기업·공공기관 DLP(Data Loss Prevention) 방식처럼
+# 1) 명확한 개인정보 형식은 즉시 차단
+# 2) 보안·비공개 자료 표현은 즉시 차단
+# 3) 병가·진단서·징계·감사 같은 업무 단어는 문장 맥락을 보고 차단
+# 4) 일반 제도·기준·절차 질문은 통과
+# 순서로 판정한다.
+
+HARD_BLOCK_PATTERNS: list[tuple[str, str]] = [
     ("주민등록번호 형태", r"\b\d{6}\s*[-~]?\s*[1-4]\d{6}\b"),
     ("휴대전화번호 형태", r"\b01[016789][-\s]?\d{3,4}[-\s]?\d{4}\b"),
+    ("일반 전화번호 형태", r"\b0\d{1,2}[-\s]?\d{3,4}[-\s]?\d{4}\b"),
     ("이메일 형태", r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"),
-    ("계좌번호 의심", r"\b\d{2,6}[-\s]\d{2,6}[-\s]\d{2,8}(?:[-\s]\d{1,4})?\b"),
+    ("계좌번호 의심", r"\b\d{2,6}[-\s]\d{2,6}[-\s]\d{2,8}(?:[-\s]\d{1,6})?\b"),
+    ("카드번호 의심", r"\b(?:\d{4}[-\s]?){3}\d{4}\b"),
     ("차량번호 의심", r"\b\d{2,3}[가-힣]\s?\d{4}\b"),
-    ("상세 주소 의심", r"[가-힣A-Za-z0-9]+(?:시|군|구)\s+[가-힣A-Za-z0-9]+(?:로|길)\s*\d+"),
+    ("상세 주소 의심", r"(?:[가-힣A-Za-z0-9]+(?:시|군|구)\s+)?[가-힣A-Za-z0-9]+(?:읍|면|동|로|길)\s*\d+(?:-\d+)?"),
+    ("HTML/스크립트 입력 의심", r"<\s*(script|iframe|object|embed|img|svg|link|meta|form|input)\b"),
+    ("SQL 명령 의심", r"\b(select|insert|update|delete|drop|alter|truncate|union)\b.+\b(from|into|table|where|database)\b"),
 ]
 
-BLOCK_KEYWORDS = [
-    "진단서",
-    "병명",
-    "치료기록",
-    "의무기록",
-    "건강정보",
-    "징계",
-    "수사",
-    "감사",
-    "민원인",
+SECURITY_BLOCK_KEYWORDS = [
     "대외비",
-    "비공개",
+    "비공개 내부자료",
+    "비공개 문서",
+    "비공개자료",
     "보안자료",
-    "주민등록번호",
-    "전화번호",
-    "주소",
-    "계좌번호",
-    "온나라",
+    "보안 문서",
+    "내부망",
     "내부 시스템",
+    "내부자료",
+    "내부 자료",
+    "내부 검토자료",
+    "온나라",
+    "전자문서시스템",
+    "비밀문서",
+    "비밀 자료",
+    "공문 원문",
+    "수사자료",
+    "감사자료",
+    "징계자료",
+    "인사자료",
+]
+
+# 이 단어들은 업무 주제 단어이다. 단독으로는 절대 차단하지 않는다.
+SENSITIVE_TOPIC_TERMS = [
+    "병가", "진단서", "진료확인서", "진단명", "병명", "질병", "치료", "입원", "통원",
+    "의무기록", "진료기록", "치료기록", "건강정보",
+    "징계", "감사", "수사", "진정", "민원", "조사", "처분", "인사", "평정", "근평",
+]
+
+# 개인의 자료나 사건 내용을 달라는 표현
+PERSONAL_RECORD_REQUEST_TERMS = [
+    "내역", "기록", "내용", "원문", "사본", "명단", "인적사항", "개인정보", "연락처",
+    "전화번호", "주소", "주민등록번호", "계좌", "병명", "진단명", "진료내용", "치료내용",
+    "처분결과", "조사내용", "감사내용", "징계기록", "징계사유", "민원내용", "진정내용",
+    "누구", "누군지", "신상", "조회",
+]
+
+# 제도·기준·절차를 묻는 표현. 이 맥락이면 업무 질문으로 본다.
+GENERAL_RULE_QUERY_TERMS = [
+    "규정", "조례", "시행령", "시행규칙", "법령", "예규", "훈령", "지침", "기준",
+    "절차", "방법", "요건", "대상", "범위", "일수", "개수", "설명", "뜻", "의미",
+    "필요", "필요해", "필요한지", "해야", "하나요", "되나요", "가능", "가능한지",
+    "첨부", "제출", "서류", "증빙", "확인서", "신청", "사용", "처리", "산정",
+    "어떻게", "어느 경우", "언제", "무엇", "뭐야", "알려줘",
 ]
 
 FIRE_RANK_TERMS = [
@@ -392,147 +429,312 @@ FIRE_RANK_TERMS = [
 
 GENERAL_WORK_TERMS = [
     "연가", "병가", "공가", "특별휴가", "휴가", "복무", "여비", "출장",
-    "유류비", "운임", "운임비", "교통비", "초과근무", "시간외", "당직",
-    "비번", "휴무", "근무시간", "여행", "관외", "복귀", "신고", "허가",
-    "계급", "재직기간", "규정", "조례", "시행규칙", "지침", "법령",
-    "기준", "개수", "일수", "설명", "알려줘", "확인", "처리",
-    "징계", "감사", "인사", "승진", "평정",
+    "유류비", "운임", "운임비", "교통비", "숙박비", "일비",
+    "초과근무", "시간외", "당직", "비번", "휴무", "근무시간",
+    "여행", "관외", "복귀", "신고", "허가", "계급", "재직기간",
+    "징계", "감사", "인사", "승진", "평정", "근평",
+    "진단서", "진료확인서", "첨부", "제출", "서류", "증빙", "신청",
 ]
 
-NOT_PERSON_NAME_TERMS = set(FIRE_RANK_TERMS + GENERAL_WORK_TERMS + [
-    "소방", "소방공무원", "공무원", "국가공무원", "지방공무원", "충남", "충청남도",
-    "소방청", "법제처", "행정안전부", "인사혁신처", "법률", "대통령령", "시행령",
-    "시행규칙", "자료명", "발행기관", "출처", "공개", "비공개", "관리자",
-    "사용자", "질문", "답변", "등록", "자료", "근거", "별표", "본문",
-    "천안", "홍성", "논산", "대전", "공주", "보령", "아산", "서산", "당진",
-    "계룡", "금산", "부여", "서천", "청양", "예산", "태안",
-])
+ORG_TERMS = [
+    "소방서", "소방본부", "119안전센터", "안전센터", "구조대", "구급대",
+    "센터", "본부", "기관", "부서",
+]
 
-ORG_TERMS = ["소방서", "소방본부", "119안전센터", "안전센터", "구조대", "구급대", "센터", "본부", "과", "팀", "계"]
-PERSONAL_CASE_TERMS = ["병가", "진단서", "병명", "치료기록", "의무기록", "건강정보", "징계", "수사", "감사", "민원", "민원인", "진정", "내역", "기록", "처분", "조사"]
-ALWAYS_BLOCK_KEYWORDS = ["대외비", "보안자료", "온나라", "내부 시스템", "주민등록번호", "전화번호", "계좌번호"]
-PRIVATE_DATA_KEYWORDS = ["비공개"]
+PUBLIC_ORG_LOCATION_TERMS = [
+    "충남", "충청남도", "천안", "홍성", "논산", "대전", "공주", "보령", "아산",
+    "서산", "당진", "계룡", "금산", "부여", "서천", "청양", "예산", "태안",
+    "소방청", "인사혁신처", "행정안전부", "법제처",
+]
+
+NOT_PERSON_NAME_TERMS = set(
+    FIRE_RANK_TERMS
+    + GENERAL_WORK_TERMS
+    + GENERAL_RULE_QUERY_TERMS
+    + PUBLIC_ORG_LOCATION_TERMS
+    + [
+        "소방", "소방공무원", "공무원", "국가공무원", "지방공무원",
+        "법률", "대통령령", "자료명", "발행기관", "출처", "공개", "비공개",
+        "관리자", "사용자", "질문", "답변", "등록", "자료", "근거", "별표", "본문",
+        "진단서", "진료확인서", "확인서", "신청서", "첨부서류", "제출서류",
+        "필요해", "필요한지", "가능한지", "해야돼", "해야해",
+    ]
+)
+
+SELF_REFERENCE_TERMS = [
+    "내", "제", "저의", "본인", "나의", "우리 직원", "우리직원", "직원 한 명",
+    "직원 1명", "대원 한 명", "대원 1명", "동료", "부하직원", "상급자",
+]
+
+JUDGMENT_REQUEST_TERMS = [
+    "봐줘", "판단", "가능할까", "가능한가", "가능해", "가능?", "문제될까",
+    "처리해도", "해도 돼", "해도되", "인정될까", "인정되나", "승인될까",
+    "징계받", "감사걸", "위법", "불법", "책임", "처분",
+]
+
+DIAGNOSIS_DETAIL_TERMS = [
+    "허리디스크", "우울증", "공황", "암", "당뇨", "혈압", "골절", "수술", "입원",
+    "통원", "약물", "정신과", "진단명", "병명", "소견", "소견서", "진료기록",
+    "치료기록", "의무기록", "진단서 내용", "진단서상", "진단서에",
+]
+
+
+def _compact_text(text: str) -> str:
+    return re.sub(r"\s+", "", text or "")
 
 
 def _tokens_for_privacy(text: str) -> list[str]:
-    return re.findall(r"[가-힣A-Za-z0-9○◯Oo]+", text)
+    return re.findall(r"[가-힣A-Za-z0-9○◯Oo＊*]+", text or "")
 
 
-def _contains_obvious_identifier(text: str) -> bool:
-    return any(re.search(pattern, text) for _, pattern in BLOCK_PATTERNS)
+def _has_org_context(text: str) -> bool:
+    """소속기관 표현을 문맥상 확인한다.
+
+    '징계' 안의 '계'처럼 한 글자 조직 단어가 섞여 오탐하는 것을 막기 위해
+    단순 부분 문자열 검색을 하지 않는다.
+    """
+    tokens = _tokens_for_privacy(text)
+    strong_org_suffixes = ("소방서", "소방본부", "119안전센터", "안전센터", "구조대", "구급대", "센터", "본부")
+    weak_org_suffixes = ("과", "팀", "계", "실", "단")
+
+    for token in tokens:
+        if token in ORG_TERMS:
+            return True
+        if token.endswith(strong_org_suffixes):
+            return True
+        if len(token) >= 3 and token.endswith(weak_org_suffixes):
+            return True
+
+    return False
+
+
+def _has_masked_person_name(text: str) -> bool:
+    # 김OO, 김○○, 김**, 홍길O 등
+    return bool(re.search(r"[가-힣]{1,2}\s*(?:O|o|0|○|◯|＊|\*){1,3}", text or ""))
+
+
+def _is_person_name_candidate(word: str) -> bool:
+    word = (word or "").strip()
+
+    if not re.fullmatch(r"[가-힣]{2,4}", word):
+        return False
+
+    if word in NOT_PERSON_NAME_TERMS:
+        return False
+
+    if _has_org_context(word):
+        return False
+
+    if any(rank in word for rank in FIRE_RANK_TERMS):
+        return False
+
+    if word.endswith((
+        "규정", "조례", "법령", "자료", "기준", "여비", "연가", "병가", "공가", "휴가",
+        "계급", "진단서", "확인서", "신청서", "서류", "첨부", "제출", "처리", "방법",
+        "절차", "대상", "범위", "내용", "질문"
+    )):
+        return False
+
+    return True
 
 
 def is_general_work_question(text: str) -> bool:
-    """소방 계급·복무·법령을 묻는 일반 업무 질문인지 확인한다.
+    """제도·기준·절차를 묻는 일반 업무 질문인지 판단한다.
 
-    예: '소방사 계급 연가 개수', '소방공무원 복무규정 여행의 제한'
-    위와 같은 질문은 개인정보가 아니므로 차단하지 않는다.
+    단어 하나가 아니라 '업무 주제 + 기준/절차 질문 맥락'을 함께 본다.
+    예: 병가 사용 시 진단서 필요해? -> True
+    예: 소방공무원 병가 진료확인서 첨부 기준 알려줘 -> True
+    예: 홍길동 논산소방서 소방교 병가 내역 알려줘 -> False
     """
-    compact = re.sub(r"\s+", "", text)
-    has_rank = any(term in text or term in compact for term in FIRE_RANK_TERMS)
-    has_work_term = any(term in text or term in compact for term in GENERAL_WORK_TERMS)
-    has_rule_term = any(term in text for term in ["규정", "조례", "시행규칙", "법령", "지침", "기준", "일수", "개수", "설명"])
+    normalized = text or ""
+    compact = _compact_text(normalized)
 
-    if (has_rank and has_work_term) or (has_work_term and has_rule_term):
+    has_work_topic = any(term in normalized or term in compact for term in GENERAL_WORK_TERMS)
+    has_rule_intent = any(term in normalized or term in compact for term in GENERAL_RULE_QUERY_TERMS)
+    has_rank = any(term in normalized or term in compact for term in FIRE_RANK_TERMS)
+
+    has_person_or_record_context = (
+        _has_masked_person_name(normalized)
+        or any(term in normalized or term in compact for term in PERSONAL_RECORD_REQUEST_TERMS)
+    )
+
+    # 명확한 개인 기록 요청이면 일반 업무 질문으로 보지 않는다.
+    if has_person_or_record_context and any(term in normalized or term in compact for term in SENSITIVE_TOPIC_TERMS):
+        return False
+
+    if has_work_topic and has_rule_intent:
+        return True
+
+    if has_rank and has_work_topic:
+        return True
+
+    # 짧은 자연어 질문 보완
+    natural_policy_patterns = [
+        "병가진단서필요", "진단서필요", "진료확인서필요", "진료확인서첨부",
+        "연가일수", "출장비", "유류비", "운임비", "여행의제한",
+    ]
+    if any(pattern in compact for pattern in natural_policy_patterns):
         return True
 
     return False
 
 
-def _is_person_name_candidate(word: str) -> bool:
-    word = word.strip()
-    if not re.fullmatch(r"[가-힣]{2,4}", word):
-        return False
-    if word in NOT_PERSON_NAME_TERMS:
-        return False
-    if any(term in word for term in ORG_TERMS):
-        return False
-    if any(rank in word for rank in FIRE_RANK_TERMS):
-        return False
-    if word.endswith(("규정", "조례", "법령", "자료", "기준", "여비", "연가", "병가", "공가", "휴가", "계급")):
-        return False
-    return True
+def _find_hard_pattern_reasons(text: str) -> list[str]:
+    reasons: list[str] = []
+    phone_found = re.search(r"\b01[016789][-\s]?\d{3,4}[-\s]?\d{4}\b", text or "")
+
+    for label, pattern in HARD_BLOCK_PATTERNS:
+        # 휴대전화번호가 이미 잡힌 경우 계좌번호로 중복 오탐하지 않게 처리
+        if label == "계좌번호 의심" and phone_found:
+            continue
+        if re.search(pattern, text or "", flags=re.IGNORECASE):
+            reasons.append(label)
+
+    return reasons
 
 
-def _has_masked_person_name(text: str) -> bool:
-    return bool(re.search(r"[가-힣]{1,2}\s*(?:O|o|0|○|◯|＊|\*){1,3}", text))
+def _find_security_reasons(text: str) -> list[str]:
+    compact = _compact_text(text)
+    reasons: list[str] = []
+
+    for keyword in SECURITY_BLOCK_KEYWORDS:
+        if keyword in text or keyword in compact:
+            reasons.append(f"보안·비공개 자료 입력 의심: {keyword}")
+
+    return reasons
 
 
-def has_person_name_with_org(text: str) -> bool:
-    """실명 후보가 소속·계급·개인 사건 맥락과 함께 있는 경우만 차단한다.
+def _has_person_identity_context(text: str) -> bool:
+    """실명·익명명·소속+계급 등 개인 식별 맥락이 있는지 본다."""
+    normalized = text or ""
+    tokens = _tokens_for_privacy(normalized)
 
-    '논산소방서 병가 기준'처럼 기관명만 있는 일반 질문은 차단하지 않는다.
-    """
-    tokens = _tokens_for_privacy(text)
-    if not tokens:
-        return False
+    if _has_masked_person_name(normalized):
+        return True
 
     for i, word in enumerate(tokens):
         if not _is_person_name_candidate(word):
             continue
 
-        nearby = " ".join(tokens[max(0, i - 4): i + 5])
-        has_org = any(org in nearby for org in ORG_TERMS)
-        has_rank = any(rank in nearby for rank in FIRE_RANK_TERMS)
-        has_case = any(term in nearby or term in text for term in PERSONAL_CASE_TERMS)
+        nearby = " ".join(tokens[max(0, i - 5): i + 6])
+        has_org_nearby = _has_org_context(nearby)
+        has_rank_nearby = any(rank in nearby for rank in FIRE_RANK_TERMS)
+        has_sensitive_nearby = any(term in nearby or term in normalized for term in SENSITIVE_TOPIC_TERMS)
+        has_record_nearby = any(term in nearby or term in normalized for term in PERSONAL_RECORD_REQUEST_TERMS)
 
-        if has_org and (has_rank or has_case):
+        # 이름 후보 + 소속 + 계급/민감업무/기록요청이 함께 있으면 개인 맥락
+        if has_org_nearby and (has_rank_nearby or has_sensitive_nearby or has_record_nearby):
             return True
-        if has_case and any(term in text for term in ["내역", "기록", "처분", "조사", "진단서", "병명"]):
+
+        # 이름 후보 + 민감업무 + 기록요청이면 개인 맥락
+        if has_sensitive_nearby and has_record_nearby:
             return True
 
     return False
 
 
-def detect_sensitive_text(text: str) -> list[str]:
-    """질문 원문 저장 전 개인정보·민감정보·보안자료를 탐지한다.
+def _has_self_sensitive_context(text: str) -> bool:
+    """자기 또는 특정 직원의 진단서·병명·징계 등 개인자료를 바탕으로 판단 요청하는지 본다."""
+    normalized = text or ""
+    compact = _compact_text(normalized)
 
-    개선 사항:
-    - '소방사', '소방교' 등 계급명은 실명 후보에서 제외한다.
-    - 일반 복무·법령 질문은 차단하지 않는다.
-    - 징계·감사·병가 같은 단어는 실명/소속/내역 등 개인 사건 맥락이 있을 때 차단한다.
+    has_self = any(term in normalized or term in compact for term in SELF_REFERENCE_TERMS)
+    if not has_self:
+        return False
+
+    has_sensitive_topic = any(term in normalized or term in compact for term in SENSITIVE_TOPIC_TERMS)
+    has_diagnosis_detail = any(term in normalized or term in compact for term in DIAGNOSIS_DETAIL_TERMS)
+    has_record_request = any(term in normalized or term in compact for term in PERSONAL_RECORD_REQUEST_TERMS)
+    has_judgment_request = any(term in normalized or term in compact for term in JUDGMENT_REQUEST_TERMS)
+
+    # "내 병가 진단서 필요해?"처럼 제도 기준만 묻는 경우는 통과
+    if is_general_work_question(normalized) and not has_diagnosis_detail and not has_record_request:
+        return False
+
+    return has_sensitive_topic and (has_diagnosis_detail or has_record_request or has_judgment_request)
+
+
+def _has_third_party_record_request(text: str) -> bool:
+    """민원인·직원·특정 대원 등 제3자의 사건 기록을 묻는지 본다."""
+    normalized = text or ""
+    compact = _compact_text(normalized)
+
+    third_party_terms = ["민원인", "직원", "대원", "신고자", "요구조자", "환자", "대상자", "제보자", "그 사람", "그직원", "해당직원"]
+    has_third_party = any(term in normalized or term in compact for term in third_party_terms)
+    has_sensitive_topic = any(term in normalized or term in compact for term in SENSITIVE_TOPIC_TERMS)
+    has_record_request = any(term in normalized or term in compact for term in PERSONAL_RECORD_REQUEST_TERMS)
+
+    return has_third_party and has_sensitive_topic and has_record_request
+
+
+def classify_privacy_risk(text: str) -> dict[str, Any]:
+    """질문을 문장 단위로 판정한다.
+
+    반환값:
+    - action: "allow" 또는 "block"
+    - reasons: 차단 사유 목록
+    - risk_score: 내부 참고용 점수
     """
-    reasons: list[str] = []
-    normalized = text.strip()
-
+    normalized = (text or "").strip()
     if not normalized:
-        return []
+        return {"action": "allow", "reasons": [], "risk_score": 0}
 
-    phone_found = re.search(r"\b01[016789][-\s]?\d{3,4}[-\s]?\d{4}\b", normalized)
+    reasons: list[str] = []
+    risk_score = 0
 
-    for label, pattern in BLOCK_PATTERNS:
-        if label == "계좌번호 의심" and phone_found:
-            continue
-        if re.search(pattern, normalized):
-            reasons.append(label)
+    hard_reasons = _find_hard_pattern_reasons(normalized)
+    if hard_reasons:
+        reasons.extend(hard_reasons)
+        risk_score += 100
 
-    if has_person_name_with_org(normalized):
-        reasons.append("특정 개인 실명과 소속 의심")
+    security_reasons = _find_security_reasons(normalized)
+    if security_reasons:
+        reasons.extend(security_reasons)
+        risk_score += 100
 
-    if _has_masked_person_name(normalized) and any(term in normalized for term in PERSONAL_CASE_TERMS):
-        reasons.append("익명 처리된 개인 사건 정보 의심")
+    # 명확한 형식 개인정보나 보안자료는 즉시 차단
+    if risk_score >= 100:
+        return {"action": "block", "reasons": sorted(set(reasons)), "risk_score": risk_score}
 
     general_work_question = is_general_work_question(normalized)
-    has_person_context = has_person_name_with_org(normalized) or _has_masked_person_name(normalized)
+    has_sensitive_topic = any(term in normalized or term in _compact_text(normalized) for term in SENSITIVE_TOPIC_TERMS)
 
-    for keyword in BLOCK_KEYWORDS:
-        if keyword not in normalized:
-            continue
+    if _has_person_identity_context(normalized) and has_sensitive_topic:
+        reasons.append("특정 개인 식별 정보와 민감 업무 내용이 함께 포함됨")
+        risk_score += 80
 
-        if keyword in ALWAYS_BLOCK_KEYWORDS:
-            reasons.append(f"금지 키워드: {keyword}")
-            continue
+    if _has_self_sensitive_context(normalized):
+        reasons.append("개인 진단서·병명·징계 등 사적 자료 기반 판단 요청 의심")
+        risk_score += 80
 
-        if keyword in PRIVATE_DATA_KEYWORDS:
-            if not general_work_question:
-                reasons.append(f"금지 키워드: {keyword}")
-            continue
+    if _has_third_party_record_request(normalized):
+        reasons.append("제3자 개인 사건·기록 조회 요청 의심")
+        risk_score += 80
 
-        if keyword in PERSONAL_CASE_TERMS:
-            if has_person_context or _contains_obvious_identifier(normalized):
-                reasons.append(f"개인 사건 관련 키워드: {keyword}")
+    if _has_masked_person_name(normalized) and has_sensitive_topic:
+        reasons.append("익명 처리된 개인 사건 정보 의심")
+        risk_score += 70
 
-    return sorted(set(reasons))
+    # 일반 업무 질문이면 점수를 낮춘다. 단, 이미 개인 식별 맥락이 강하면 차단 유지.
+    if general_work_question and risk_score < 80:
+        return {"action": "allow", "reasons": [], "risk_score": max(risk_score - 50, 0)}
+
+    if risk_score >= 70:
+        return {"action": "block", "reasons": sorted(set(reasons)), "risk_score": risk_score}
+
+    return {"action": "allow", "reasons": [], "risk_score": risk_score}
+
+
+def detect_sensitive_text(text: str) -> list[str]:
+    """기존 코드 호환용 함수.
+
+    질문 저장 전 호출된다. 차단 사유 목록만 반환한다.
+    단순 금지어 방식이 아니라 classify_privacy_risk()의 문장 기반 판정 결과를 사용한다.
+    """
+    result = classify_privacy_risk(text)
+    return list(result.get("reasons", []))
+
+
 
 def classify_question_category(question: str) -> str:
     """질문 내용을 기반으로 질문 분야를 자동 분류한다.
@@ -2520,8 +2722,8 @@ def resource_request_page() -> None:
             st.error("공식 출처 URL 형식이 올바르지 않습니다.")
         else:
             combined_request_text = "\n".join([title, agency, source_url, reason])
-            blocked, reasons = detect_sensitive_text(combined_request_text)
-            if blocked:
+            reasons = detect_sensitive_text(combined_request_text)
+            if reasons:
                 st.error("자료 등록 요청에 개인정보·민감정보·보안자료로 의심되는 내용이 포함되어 접수할 수 없습니다.")
                 st.caption("차단 사유: " + ", ".join(reasons))
                 return
@@ -2558,8 +2760,8 @@ def resource_request_page() -> None:
             if not delete_reason.strip():
                 st.error("삭제 요청 사유를 입력하십시오.")
             else:
-                blocked, reasons = detect_sensitive_text(delete_reason)
-                if blocked:
+                reasons = detect_sensitive_text(delete_reason)
+                if reasons:
                     st.error("삭제 요청 사유에 개인정보·민감정보·보안자료로 의심되는 내용이 포함되어 접수할 수 없습니다.")
                     st.caption("차단 사유: " + ", ".join(reasons))
                     return
