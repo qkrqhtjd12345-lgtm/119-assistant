@@ -1,0 +1,12 @@
+
+# secrets
+.streamlit/secrets.toml
+secrets.toml
+
+# python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# system files
+.DS_Store

@@ -4,11 +4,24 @@
     "password_hash": "pbkdf2_sha256$36e7377393b26484e34c633ec97b2c7f$eajUXRT+0f3ZZv7tYSR/U+3blcPNVOeLMJlWTN97VXU=",
     "role": "admin",
     "created_at": "2026-06-20T01:27:23",
-    "last_login": "2026-06-20T01:27:34",
-    "last_active": "2026-06-20T01:27:34",
+    "last_login": "2026-06-20T07:46:05",
+    "last_active": "2026-06-20T07:46:44",
     "is_active": true,
     "force_logout": false,
     "admin_request_reason": "초기 관리자 계정",
     "memo": "배포 전 비밀번호 변경 필수"
+  },
+  {
+    "user_id": "pws3560",
+    "password_hash": "pbkdf2_sha256$c17a2e47f6e87244834a88adbf2de334$zq8UYf7g+IB8nXEGPOYmB9wTnR56B107PGHdroVH8ks=",
+    "role": "user",
+    "created_at": "2026-06-20T07:11:22",
+    "last_login": "2026-06-20T07:47:28",
+    "last_active": "2026-06-20T07:47:30",
+    "is_active": true,
+    "force_logout": false,
+    "admin_request_reason": "",
+    "admin_request_status": "",
+    "memo": ""
   }
 ]

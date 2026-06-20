@@ -34,9 +34,15 @@ try:
     from google import genai
 except Exception:
     genai = None
+
+try:
+    from pypdf import PdfReader
+except Exception:
+    PdfReader = None
 APP_NAME = "충남119행정비서"
 APP_VERSION = "v1.0.12 MVP"
 DATA_DIR = Path(__file__).parent / "data"
+UPLOAD_DIR = DATA_DIR / "uploads"
 SESSION_TIMEOUT_SECONDS = 10 * 60
 FILES = {
     "users": DATA_DIR / "users.json",
@@ -46,6 +52,7 @@ FILES = {
     "audit_logs": DATA_DIR / "audit_logs.json",
     "notices": DATA_DIR / "notices.json",
     "admin_requests": DATA_DIR / "admin_requests.json",
+    "ai_settings": DATA_DIR / "ai_settings.json",
 }
 
 # 로고는 Streamlit Cloud 배포 시 assets 폴더 누락으로 깨지는 경우가 있어
@@ -351,6 +358,7 @@ def classify_question_category(question: str) -> str:
 # -----------------------------------------------------------------------------
 def init_storage() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     users = load_users()
     if not users:
         users = [
@@ -392,6 +400,19 @@ def init_storage() -> None:
         )
     if not FILES["admin_requests"].exists():
         save_json("admin_requests", [])
+    if not FILES["ai_settings"].exists():
+        save_json(
+            "ai_settings",
+            {
+                "instruction": (
+                    "반드시 사이트에 등록된 자료의 내용만 근거로 답변한다. "
+                    "등록된 자료에서 확인할 수 없는 내용은 추측하지 말고 모른다고 답변한다. "
+                    "최종 판단은 소속 기관 담당 부서와 공식 자료로 확인하도록 안내한다."
+                ),
+                "updated_at": now_iso(),
+                "updated_by": "system",
+            },
+        )
     if not FILES["resources"].exists():
         save_json(
             "resources",
@@ -1312,62 +1333,493 @@ def check_session() -> None:
 # -----------------------------------------------------------------------------
 # 사용자 화면
 # -----------------------------------------------------------------------------
-def generate_ai_answer(category: str, question: str) -> str:
-    """Gemini API 기반 답변 생성기.
-    주의: 현재 단계는 RAG/문서검색 연결 전의 1차 Gemini 연결입니다.
-    등록 자료 기반 출처 답변은 다음 단계에서 별도 검색 로직을 붙여야 합니다.
+
+def get_ai_instruction() -> str:
+    settings = load_json("ai_settings", {})
+    instruction = str(settings.get("instruction", "")).strip()
+    if instruction:
+        return instruction
+    return (
+        "반드시 사이트에 등록된 자료의 내용만 근거로 답변한다. "
+        "등록된 자료에서 확인할 수 없는 내용은 추측하지 말고 모른다고 답변한다. "
+        "최종 판단은 소속 기관 담당 부서와 공식 자료로 확인하도록 안내한다."
+    )
+
+
+def safe_filename(filename: str) -> str:
+    name = Path(filename or "uploaded.pdf").name
+    name = re.sub(r"[^0-9A-Za-z가-힣._ -]", "_", name).strip()
+    return name or "uploaded.pdf"
+
+
+def extract_pdf_text(file_path: Path, max_chars: int = 120000) -> str:
+    """PDF에서 검색 가능한 텍스트를 추출한다.
+
+    주의:
+    - 스캔본/이미지 PDF는 pypdf만으로 본문 추출이 되지 않을 수 있다.
+    - 실패 시 빈 문자열을 반환하여 AI가 본문 없는 자료를 근거처럼 사용하지 않도록 한다.
     """
+    if PdfReader is None:
+        return ""
+
+    try:
+        reader = PdfReader(str(file_path))
+        parts: list[str] = []
+        total_len = 0
+
+        for page in reader.pages:
+            page_text = page.extract_text() or ""
+            page_text = page_text.replace("\x00", " ")
+            page_text = re.sub(r"[ \t]+", " ", page_text)
+            page_text = re.sub(r"\n{3,}", "\n\n", page_text).strip()
+
+            if page_text:
+                parts.append(page_text)
+                total_len += len(page_text)
+
+            if total_len >= max_chars:
+                break
+
+        extracted = "\n\n".join(parts)
+        extracted = re.sub(r"[ \t]+", " ", extracted)
+        extracted = re.sub(r"\n{3,}", "\n\n", extracted).strip()
+
+        return extracted[:max_chars]
+
+    except Exception:
+        return ""
+
+def save_resource_pdf(resource_id: str, uploaded_file: Any) -> dict[str, str | int]:
+    """관리자가 첨부한 PDF를 저장하고, AI 검색용 텍스트 파일을 함께 만든다."""
+    if uploaded_file is None:
+        return {}
+
+    filename = safe_filename(uploaded_file.name)
+
+    if not filename.lower().endswith(".pdf"):
+        raise ValueError("PDF 파일만 첨부할 수 있습니다.")
+
+    data = uploaded_file.getvalue()
+
+    if not data.startswith(b"%PDF"):
+        raise ValueError("올바른 PDF 파일이 아닙니다.")
+
+    target_dir = UPLOAD_DIR / resource_id
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    target_path = target_dir / filename
+    target_path.write_bytes(data)
+
+    text = extract_pdf_text(target_path)
+    text_path = ""
+
+    if text:
+        text_file = target_path.with_suffix(".txt")
+        text_file.write_text(text, encoding="utf-8")
+        text_path = str(text_file.relative_to(DATA_DIR))
+
+    return {
+        "attached_file_name": filename,
+        "attached_file_path": str(target_path.relative_to(DATA_DIR)),
+        "attached_file_size": len(data),
+        "attached_file_text_path": text_path,
+        "attached_file_text_length": len(text),
+        "attached_file_text_status": "extracted" if text else "empty_or_scan_pdf",
+    }
+
+def read_resource_attached_text(resource: dict[str, Any], max_chars: int | None = None) -> str:
+    """자료에 연결된 PDF 추출문을 읽는다.
+
+    기존 자료와의 호환을 위해 attached_file_text_path 외에 일부 예비 필드도 확인한다.
+    """
+    direct_text = str(
+        resource.get("attached_file_text")
+        or resource.get("pdf_text")
+        or resource.get("text")
+        or ""
+    ).strip()
+
+    if direct_text:
+        text = direct_text
+    else:
+        rel = str(resource.get("attached_file_text_path", "")).strip()
+        if not rel:
+            return ""
+
+        path = DATA_DIR / rel
+
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            return ""
+
+    text = text.replace("\x00", " ")
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+
+    if max_chars is not None:
+        return text[:max_chars]
+
+    return text
+
+def normalize_search_text(value: str) -> str:
+    """검색 정확도를 높이기 위한 간단한 정규화."""
+    value = str(value or "").lower()
+    value = value.replace("ㆍ", "·")
+    value = re.sub(r"\s+", " ", value)
+    return value.strip()
+
+
+def expand_question_terms(question: str) -> list[str]:
+    """사용자 표현과 법령·지침 표현 차이를 줄이기 위해 검색어를 확장한다."""
+    question = normalize_search_text(question)
+
+    base_terms = [
+        t.strip()
+        for t in re.split(r"[\s,./?·:;(){}\[\]<>\"'“”‘’\-_=+]+", question)
+        if len(t.strip()) >= 2
+    ]
+
+    synonym_map = {
+        "출장": [
+            "출장", "여비", "출장비", "국내출장", "공무출장", "근무지내", "근무지 내",
+            "근무지외", "근무지 외", "관내출장", "관외출장", "출장명령", "여비정산",
+            "운임", "교통비", "일비", "식비", "숙박비",
+        ],
+        "여비": [
+            "여비", "출장", "출장비", "국내여비", "운임", "일비", "식비", "숙박비",
+            "여비정산", "여비 지급", "공무원 여비",
+        ],
+        "유류비": [
+            "유류비", "연료비", "자동차운임", "자동차 운임", "자가용", "자가운전",
+            "자가용 승용차", "개인차량", "승용차", "통행료", "주차료",
+            "공무상 부득이", "공무상 부득이한 사유", "공용차량", "관용차",
+            "운임", "교통비", "실비",
+        ],
+        "연료비": [
+            "연료비", "유류비", "자동차운임", "자동차 운임", "자가용",
+            "통행료", "주차료", "운임", "실비",
+        ],
+        "운임": [
+            "운임", "운임비", "교통비", "철도운임", "철도 운임", "버스운임", "버스 운임",
+            "자동차운임", "자동차 운임", "선박운임", "항공운임", "고속버스",
+            "시외버스", "대중교통", "실비",
+        ],
+        "운임비": [
+            "운임", "운임비", "교통비", "철도운임", "버스운임", "자동차운임",
+            "대중교통", "실비", "자가용", "연료비", "통행료", "주차료",
+        ],
+        "자가용": [
+            "자가용", "자가운전", "자가용 승용차", "자동차운임", "연료비",
+            "유류비", "통행료", "주차료", "공무상 부득이", "공용차량", "관용차",
+        ],
+        "관용차": ["관용차", "공용차량", "공용 차량", "운임", "자동차운임"],
+        "공용차량": ["공용차량", "공용 차량", "관용차", "운임", "자동차운임"],
+        "병가": ["병가", "질병", "진단서", "복무", "휴가"],
+        "연가": ["연가", "휴가", "복무"],
+        "초과근무": ["초과근무", "시간외", "수당", "근무명령"],
+        "당직": ["당직", "비상근무", "근무명령"],
+    }
+
+    expanded = set(base_terms)
+
+    # 붙여쓰기와 띄어쓰기를 모두 검색한다.
+    for term in list(base_terms):
+        if " " in term:
+            expanded.add(term.replace(" ", ""))
+
+    joined_question = question.replace(" ", "")
+
+    for key, values in synonym_map.items():
+        key_joined = key.replace(" ", "")
+        if key in question or key_joined in joined_question:
+            expanded.update(values)
+            expanded.update(v.replace(" ", "") for v in values)
+
+    return sorted({t.strip().lower() for t in expanded if len(t.strip()) >= 2}, key=len, reverse=True)
+
+def split_text_chunks(text: str, chunk_size: int = 1200, overlap: int = 220) -> list[str]:
+    """긴 본문을 검색용 문단으로 나눈다.
+
+    단순 글자수 자르기만 하면 조문·문단이 중간에서 끊겨 답변 품질이 낮아질 수 있어
+    우선 문단 기준으로 묶고, 너무 긴 문단만 글자수 기준으로 나눈다.
+    """
+    text = str(text or "").replace("\x00", " ")
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+
+    if not text:
+        return []
+
+    paragraphs = [p.strip() for p in re.split(r"\n{2,}", text) if p.strip()]
+    chunks: list[str] = []
+    current = ""
+
+    for paragraph in paragraphs:
+        if len(paragraph) > chunk_size:
+            if current:
+                chunks.append(current.strip())
+                current = ""
+
+            start = 0
+            while start < len(paragraph):
+                end = min(start + chunk_size, len(paragraph))
+                piece = paragraph[start:end].strip()
+                if piece:
+                    chunks.append(piece)
+
+                if end >= len(paragraph):
+                    break
+
+                start = max(0, end - overlap)
+            continue
+
+        candidate = f"{current}\n\n{paragraph}".strip() if current else paragraph
+
+        if len(candidate) <= chunk_size:
+            current = candidate
+        else:
+            if current:
+                chunks.append(current.strip())
+            current = paragraph
+
+    if current:
+        chunks.append(current.strip())
+
+    return chunks
+
+def score_chunk(chunk: str, terms: list[str]) -> int:
+    """질문과 본문 문단의 관련도를 계산한다."""
+    chunk_lower = normalize_search_text(chunk)
+    chunk_joined = chunk_lower.replace(" ", "")
+    score = 0
+
+    for term in terms:
+        term_lower = normalize_search_text(term)
+        if not term_lower:
+            continue
+
+        count = chunk_lower.count(term_lower)
+        joined_count = chunk_joined.count(term_lower.replace(" ", ""))
+
+        if count:
+            score += count * 4
+
+        if joined_count and joined_count != count:
+            score += joined_count * 3
+
+    important_terms = [
+        "여비", "출장", "국내출장", "근무지내", "근무지 내", "근무지외", "근무지 외",
+        "운임", "운임비", "교통비", "자동차운임", "자동차 운임",
+        "철도운임", "철도 운임", "버스운임", "버스 운임",
+        "유류비", "연료비", "자가용", "자가운전", "자가용 승용차",
+        "자동차", "공용차량", "공용 차량", "관용차",
+        "통행료", "주차료", "실비", "지급", "정산",
+        "공무상 부득이", "공무상 부득이한 사유",
+        "일비", "식비", "숙박비",
+    ]
+
+    for term in important_terms:
+        if term in chunk_lower or term.replace(" ", "") in chunk_joined:
+            score += 2
+
+    # 질문이 여비·출장 계열일 때 핵심 표현이 같이 있으면 우선순위를 높인다.
+    travel_core = ["자가용", "자동차운임", "연료비", "통행료", "주차료", "공용차량", "관용차"]
+    if any(term in terms for term in ["출장", "여비", "유류비", "연료비", "운임", "운임비"]):
+        for term in travel_core:
+            if term in chunk_lower or term.replace(" ", "") in chunk_joined:
+                score += 5
+
+    return score
+
+def build_resource_context(question: str, limit: int = 5) -> tuple[str, list[dict[str, Any]]]:
+    """질문과 관련된 공개 자료의 실제 본문 발췌를 구성한다.
+
+    안전 원칙:
+    - 공개 자료만 사용한다.
+    - 본문 또는 요약에서 질문과 관련된 부분이 검색된 경우에만 Gemini에 전달한다.
+    - 관련 문단이 없으면 임의 자료를 넘기지 않는다.
+    """
+    resources = [
+        r for r in load_json("resources", [])
+        if normalize_visibility(r.get("visibility")) == "Public" and not r.get("deleted")
+    ]
+
+    if not resources:
+        return "", []
+
+    terms = expand_question_terms(question)
+    question_lower = normalize_search_text(question)
+    scored_chunks: list[tuple[int, dict[str, Any], str, int]] = []
+
+    for r in resources:
+        metadata_text = " ".join([
+            str(r.get("title", "")),
+            str(r.get("category", "")),
+            str(r.get("agency", "")),
+            str(r.get("summary", "")),
+        ]).strip()
+
+        attached_text = read_resource_attached_text(r, max_chars=None)
+        full_text = f"{metadata_text}\n\n{attached_text}".strip()
+
+        if not full_text:
+            continue
+
+        chunks = split_text_chunks(full_text, chunk_size=1200, overlap=220)
+        title = normalize_search_text(str(r.get("title", "")))
+        title_joined = title.replace(" ", "")
+
+        for idx, chunk in enumerate(chunks, 1):
+            score = score_chunk(chunk, terms)
+
+            if title and any(term in title or term.replace(" ", "") in title_joined for term in terms):
+                score += 8
+
+            if any(term in question_lower for term in ["출장", "유류비", "연료비", "운임", "운임비", "교통비", "여비"]):
+                for bonus_term in [
+                    "여비", "출장", "운임", "자동차운임", "교통비", "유류비", "연료비",
+                    "자가용", "자가운전", "자가용 승용차", "통행료", "주차료",
+                    "공용차량", "관용차", "공무상 부득이",
+                ]:
+                    if bonus_term in chunk or bonus_term.replace(" ", "") in chunk.replace(" ", ""):
+                        score += 4
+
+            if score > 0:
+                scored_chunks.append((score, r, chunk, idx))
+
+    scored_chunks.sort(key=lambda x: x[0], reverse=True)
+
+    selected_chunks: list[tuple[int, dict[str, Any], str, int]] = []
+    per_resource_count: dict[str, int] = {}
+
+    # 한 자료가 검색 결과를 과도하게 독점하지 않도록 하되, 높은 점수 문단은 우선 반영한다.
+    for item in scored_chunks:
+        score, r, chunk, idx = item
+        resource_id = str(r.get("id") or r.get("title", ""))
+        current_count = per_resource_count.get(resource_id, 0)
+
+        if current_count >= 3 and len(selected_chunks) >= limit:
+            continue
+
+        selected_chunks.append(item)
+        per_resource_count[resource_id] = current_count + 1
+
+        if len(selected_chunks) >= 10:
+            break
+
+    if not selected_chunks:
+        return "", []
+
+    blocks = []
+    selected_resources: list[dict[str, Any]] = []
+    seen_resource_ids = set()
+
+    for idx, (score, r, chunk, chunk_idx) in enumerate(selected_chunks, 1):
+        resource_id = r.get("id") or r.get("title", "")
+
+        if resource_id not in seen_resource_ids:
+            selected_resources.append(r)
+            seen_resource_ids.add(resource_id)
+
+        blocks.append(
+            f"[관련 근거 {idx}]\n"
+            f"자료명: {r.get('title', '')}\n"
+            f"관련 근거: {r.get('category', '')}\n"
+            f"발행기관: {r.get('agency', '')}\n"
+            f"공식 출처 URL: {r.get('source_url', '')}\n"
+            f"최종 확인일: {r.get('checked_at', '')}\n"
+            f"검색점수: {score}\n"
+            f"문단번호: {chunk_idx}\n"
+            f"본문 발췌:\n{chunk}"
+        )
+
+    return "\n\n".join(blocks), selected_resources
+
+def generate_ai_answer(category: str, question: str) -> str:
+    """등록된 공개 자료 기반 Gemini 답변 생성기."""
     trimmed = question.strip()
-    system_prompt = f"""
-너는 충남119행정비서의 소방행정 보조 AI다.
-반드시 지켜야 할 원칙:
-1. 법령, 조례, 지침, 복무, 감사, 인사, 복무관리 질문에 답하되 단정하지 않는다.
-2. 근거 자료가 없는 부분은 '확인 필요'라고 말한다.
-3. 개인정보·민감정보·보안자료 입력을 요구하지 않는다.
-4. 최종 업무처리는 담당 부서, 공식 법령·조례, 내부 지침으로 확인하라고 안내한다.
-5. 사용자가 바로 이해할 수 있게 '핵심 결론 → 이유 → 실제 처리 방법 → 주의사항' 순서로 답한다.
-6. 현재 시스템은 아직 문서 RAG 검색이 붙지 않은 상태이므로, 특정 조문·페이지·내부지침 번호를 모르면 지어내지 않는다.
-질문 분야: {category}
-"""
-    # Streamlit Cloud의 Secrets에 GEMINI_API_KEY가 없으면 안전하게 임시 답변 반환
-    if genai is None or "GEMINI_API_KEY" not in st.secrets:
+    context, matched_resources = build_resource_context(trimmed)
+
+    if not context.strip():
         return (
-            f"[{category}] 분야 질문으로 접수되었습니다.\n\n"
-            "Gemini API 연동이 아직 설정되지 않아 임시 답변만 제공합니다.\n"
-            "1) requirements.txt 에 google-genai 패키지를 추가하고,\n"
-            "2) Streamlit Cloud → App settings → Secrets에 아래 형식으로 키를 저장해야 합니다.\n\n"
-            'GEMINI_API_KEY = "발급받은_API키"\n\n'
-            "업무 적용 전 확인 순서:\n"
-            "1. 국가법령정보센터 또는 자치법규정보시스템에서 최신 법령·조례 확인\n"
-            "2. 소속 기관 복무·인사·감사 담당 부서 확인\n"
-            "3. 필요한 경우 공식 공문 또는 내부 결재 절차 확인\n\n"
-            f"질문 요약: {trimmed[:180]}{'...' if len(trimmed) > 180 else ''}\n\n"
+            "등록된 공개 자료에서 질문과 직접 관련된 본문 근거를 찾을 수 없습니다.\n\n"
+            "이 사이트에 등록된 공개 자료만으로는 해당 질문에 답변할 수 없습니다. "
+            "담당 부서 또는 공식 자료를 통해 확인하십시오.\n\n"
             f"---\n{AI_DISCLAIMER}"
         )
+
+    source_lines = [
+        f"- {r.get('title', '')} / {r.get('agency', '')} / {r.get('checked_at', '')}"
+        for r in matched_resources
+    ]
+    source_text = "\n".join(source_lines)
+    instruction = get_ai_instruction()
+
+    system_prompt = f"""
+너는 충남119행정비서의 소방행정 보조 AI다.
+
+관리자가 설정한 AI 지침:
+{instruction}
+
+반드시 지켜야 할 원칙:
+1. 아래 '등록 자료 본문 발췌'에 실제로 적힌 내용만 근거로 답변한다.
+2. 자료명, 발행기관, 제목만 보고 세부 내용을 추정하지 않는다.
+3. 등록 자료 본문 발췌에 없는 조문 번호, 지급 기준, 절차, 금액, 날짜, 기관 지침은 절대 지어내지 않는다.
+4. 질문과 관련된 내용이 일부만 확인되면 '등록 자료 기준으로 확인되는 범위'와 '추가 확인이 필요한 사항'을 구분한다.
+5. 법적 판단, 징계 판단, 감사 판단, 인사 판단, 지급 확정 여부를 단정하지 않는다.
+6. 개인정보·민감정보·보안자료 입력을 요구하지 않는다.
+7. 최종 업무처리는 담당 부서와 공식 자료로 확인하라고 안내한다.
+8. 답변은 다음 형식을 따른다.
+
+1. 핵심 결론
+2. 등록 자료 기준 근거
+3. 실제 처리 방법
+4. 추가 확인사항
+5. 주의사항
+6. 근거 자료
+
+질문 분야: {category}
+"""
+
+    if genai is None or "GEMINI_API_KEY" not in st.secrets:
+        return (
+            "Gemini API 설정을 확인할 수 없어 AI 답변을 생성하지 못했습니다.\n\n"
+            "다만 질문과 관련되어 검색된 등록 자료는 다음과 같습니다.\n"
+            f"{source_text}\n\n"
+            "업무 적용 전 담당 부서와 공식 자료로 최종 확인하십시오.\n\n"
+            f"---\n{AI_DISCLAIMER}"
+        )
+
     try:
         client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
         response = client.models.generate_content(
             model="gemini-2.5-flash",
-            contents=f"{system_prompt}\n\n사용자 질문:\n{trimmed}",
-        )
-        answer = getattr(response, "text", "") or ""
-        answer = answer.strip()
-        if not answer:
-            raise RuntimeError("Gemini 응답이 비어 있습니다.")
-        return f"{answer}\n\n---\n{AI_DISCLAIMER}"
-    except Exception as e:
-        return (
-            f"[{category}] 분야 질문으로 접수되었습니다.\n\n"
-            "Gemini 호출 중 오류가 발생하여 임시 답변을 제공합니다.\n"
-            f"오류 내용: {e}\n\n"
-            "업무 적용 전 확인 순서:\n"
-            "1. 국가법령정보센터 또는 자치법규정보시스템에서 최신 법령·조례 확인\n"
-            "2. 소속 기관 복무·인사·감사 담당 부서 확인\n"
-            "3. 필요한 경우 공식 공문 또는 내부 결재 절차 확인\n\n"
-            f"질문 요약: {trimmed[:180]}{'...' if len(trimmed) > 180 else ''}\n\n"
-            f"---\n{AI_DISCLAIMER}"
+            contents=(
+                f"{system_prompt}\n\n"
+                f"[등록 자료 본문 발췌]\n{context}\n\n"
+                f"[사용자 질문]\n{trimmed}\n\n"
+                f"위 본문 발췌에 없는 내용은 '등록된 자료만으로는 확인할 수 없습니다'라고 답변하십시오."
+            ),
         )
 
+        answer = getattr(response, "text", "") or ""
+        answer = answer.strip()
+
+        if not answer:
+            raise RuntimeError("Gemini 응답이 비어 있습니다.")
+
+        return f"{answer}\n\n근거로 사용한 등록 자료:\n{source_text}\n\n---\n{AI_DISCLAIMER}"
+
+    except Exception as e:
+        return (
+            "Gemini 호출 중 오류가 발생했습니다.\n\n"
+            f"오류 내용: {e}\n\n"
+            "질문과 관련되어 검색된 등록 자료는 다음과 같습니다.\n"
+            f"{source_text}\n\n"
+            "업무 적용 전 담당 부서와 공식 자료로 최종 확인하십시오.\n\n"
+            f"---\n{AI_DISCLAIMER}"
+        )
 
 def home_page() -> None:
     user = current_user()
@@ -1414,10 +1866,16 @@ def home_page() -> None:
         unsafe_allow_html=True,
     )
     with st.form("question_form"):
+        label_col, ai_col = st.columns([3, 1])
+        with label_col:
+            st.markdown("질문 내용")
+        with ai_col:
+            st.caption("사용 AI: Gemini")
         question = st.text_area(
             "질문 내용",
             height=330,
             placeholder="예: 병가 사용 시 필요한 증빙서류와 복무 처리는 어떻게 확인해야 하나요?",
+            label_visibility="collapsed",
         )
         submitted = st.form_submit_button("질문하기", type="primary", use_container_width=True)
     if submitted:
@@ -1561,9 +2019,11 @@ def resource_request_page() -> None:
         reason = st.text_area("요청 사유", max_chars=500)
         submitted = st.form_submit_button("자료 등록 요청", type="primary", use_container_width=True)
     if submitted:
-        if not title.strip() or not agency.strip() or not source_url.strip() or not reason.strip():
-            st.error("자료명, 발행기관, 공식 출처 URL, 요청 사유를 모두 입력하십시오.")
-        elif not is_valid_url(source_url):
+        if not title.strip() or not agency.strip():
+            st.error("자료명, 발행기관은 필수입니다.")
+        elif visibility == "Public" and not source_url.strip():
+            st.error("공개 자료는 공식 출처 URL을 입력해야 합니다.")
+        elif source_url.strip() and not is_valid_url(source_url.strip()):
             st.error("공식 출처 URL 형식이 올바르지 않습니다.")
         else:
             requests = load_json("resource_requests", [])
@@ -1572,6 +2032,11 @@ def resource_request_page() -> None:
                 "user_id": user["user_id"],
                 "request_type": "등록",
                 "title": title.strip(),
+                "category": category,
+                "agency": agency.strip(),
+                "visibility": visibility,
+                "source_url": source_url.strip(),
+                "reason": reason.strip(),
                 "category": category,
                 "agency": agency.strip(),
                 "source_url": source_url.strip(),
@@ -1801,16 +2266,25 @@ def admin_resource_register() -> None:
             non_public_reason = ""
             if visibility == "Private":
                 non_public_reason = st.text_area("비공개 사유", height=70, placeholder="예: 공개 여부 확인 필요")
+            pdf_file = st.file_uploader("PDF 첨부", type=["pdf"])
             submitted = st.form_submit_button("자료 등록", type="primary", use_container_width=True)
         if submitted:
-            if not title.strip() or not agency.strip() or not source_url.strip():
-                st.error("자료명, 발행기관, 공식 출처 URL은 필수입니다.")
-            elif not is_valid_url(source_url):
+            if not title.strip() or not agency.strip():
+                st.error("자료명, 발행기관은 필수입니다.")
+            elif visibility == "Public" and not source_url.strip():
+                st.error("공개 자료는 공식 출처 URL을 입력해야 합니다.")
+            elif source_url.strip() and not is_valid_url(source_url.strip()):
                 st.error("공식 출처 URL 형식이 올바르지 않습니다.")
             else:
                 resources = load_json("resources", [])
+                resource_id = uid("res")
+                try:
+                    file_info = save_resource_pdf(resource_id, pdf_file) if pdf_file is not None else {}
+                except ValueError as e:
+                    st.error(str(e))
+                    return
                 record = {
-                    "id": uid("res"),
+                    "id": resource_id,
                     "title": title.strip(),
                     "category": category,
                     "agency": agency.strip(),
@@ -1822,6 +2296,7 @@ def admin_resource_register() -> None:
                     "checked_at": checked_at.strftime("%Y-%m-%d"),
                     "created_by": admin["user_id"],
                     "updated_at": now_iso(),
+                    **file_info,
                 }
                 resources.append(record)
                 save_json("resources", resources)
@@ -2241,12 +2716,46 @@ def admin_notices() -> None:
                         st.rerun()
 
 
+
+def admin_ai_settings() -> None:
+    admin = current_user()
+    assert admin is not None
+    st.markdown("### AI 지침 관리")
+    box(
+        "info",
+        "AI 답변 기준",
+        "AI는 사이트에 등록된 공개 자료를 바탕으로만 답변하도록 설정되어 있습니다. "
+        "아래 지침은 Gemini 호출 시 함께 전달됩니다. 추측 답변을 허용하는 문구는 입력하지 마십시오.",
+    )
+    settings = load_json("ai_settings", {})
+    current_instruction = str(settings.get("instruction", get_ai_instruction()))
+    with st.form("ai_instruction_form"):
+        instruction = st.text_area("AI 지침", value=current_instruction, height=260)
+        submitted = st.form_submit_button("AI 지침 저장", type="primary", use_container_width=True)
+    if submitted:
+        if not instruction.strip():
+            st.error("AI 지침을 입력하십시오.")
+        else:
+            save_json(
+                "ai_settings",
+                {
+                    "instruction": instruction.strip(),
+                    "updated_at": now_iso(),
+                    "updated_by": admin["user_id"],
+                },
+            )
+            add_audit(admin["user_id"], "AI_INSTRUCTION_UPDATE", "ai_settings", "AI 지침 수정")
+            st.success("AI 지침이 저장되었습니다.")
+            st.rerun()
+    st.caption(f"최종 수정일: {settings.get('updated_at', '')} / 수정자: {settings.get('updated_by', '')}")
+
+
 def admin_page() -> None:
     if not require_admin():
         st.error("관리자 권한이 필요합니다.")
         return
     st.markdown("# 관리자")
-    tabs = st.tabs(["대시보드", "질문 이력", "자료 등록", "자료 관리", "자료 요청", "권한 신청", "회원 관리", "감사로그", "공지"])
+    tabs = st.tabs(["대시보드", "질문 이력", "자료 등록", "자료 관리", "자료 요청", "권한 신청", "회원 관리", "감사로그", "공지", "AI 지침"])
     with tabs[0]:
         admin_dashboard()
     with tabs[1]:
@@ -2265,6 +2774,8 @@ def admin_page() -> None:
         admin_audit_logs()
     with tabs[8]:
         admin_notices()
+    with tabs[9]:
+        admin_ai_settings()
     render_common_disclaimer()
 
 
@@ -2494,22 +3005,29 @@ def topbar() -> None:
             st.markdown("</div>", unsafe_allow_html=True)
 
 
+def privacy_notice_confirmed() -> bool:
+    """개인정보·책임 안내 확인 여부를 세션 기준으로 판단한다."""
+    return st.session_state.get("show_login_privacy_notice") is False
+
+
 def render_login_privacy_notice() -> None:
-    """로그인 직후 매번 개인정보·책임 안내를 표시한다."""
-    if not st.session_state.get("show_login_privacy_notice"):
+    """로그인 직후 매번 개인정보·책임 안내만 표시한다."""
+    if privacy_notice_confirmed():
         return
     st.markdown(
         """
         <div class="login-privacy-alert">
             <b>개인정보 입력 금지 및 책임 안내</b><br>
-            질문, 자료 요청, 권한 요청 사유에는 개인정보·민감정보·보안자료를 입력하지 마십시오.<br>
-            입력한 내용에 대한 최종 책임은 사용자 본인과 소속 기관에 있으며, 정확한 업무처리는 반드시 담당 부서와 공식 자료로 확인해야 합니다.
+            질문, 자료 등록 요청, 권한 요청 시 개인정보, 민감정보, 보안자료 및 비공개 내부자료를 입력하지 마십시오.<br><br>
+            AI 답변의 정확성, 최신성, 완전성 및 특정 업무처리의 적법성은 보장되지 않습니다.<br><br>
+            입력한 내용과 이를 바탕으로 한 최종 판단 및 업무처리의 책임은 사용자 본인에게 있습니다.<br><br>
+            최종 업무처리 전에는 반드시 담당 부서 및 공식 자료를 확인하시기 바랍니다.
         </div>
         """,
         unsafe_allow_html=True,
     )
     if st.button(
-        "개인정보 입력 금지 및 책임 안내를 확인했습니다",
+        "개인정보 입력 금지 및 책임 안내를 확인하였으며, 입력 내용 및 최종 업무처리에 대한 책임이 사용자 본인에게 있음을 확인했습니다.",
         key="confirm_login_privacy_notice",
         type="primary",
         use_container_width=True,
@@ -2527,8 +3045,12 @@ def main() -> None:
         login_page()
         return
     check_session()
+    if "show_login_privacy_notice" not in st.session_state:
+        st.session_state["show_login_privacy_notice"] = True
+    if not privacy_notice_confirmed():
+        render_login_privacy_notice()
+        return
     topbar()
-    render_login_privacy_notice()
     menu = sidebar_menu()
     if menu == "홈":
         home_page()

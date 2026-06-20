@@ -102,5 +102,957 @@
     "action": "LOGIN",
     "target": "admin",
     "detail": "로그인 성공"
+  },
+  {
+    "id": "log_1781919273136_a39e51",
+    "created_at": "2026-06-20T01:34:33",
+    "actor": "admin",
+    "action": "LOGIN",
+    "target": "admin",
+    "detail": "로그인 성공"
+  },
+  {
+    "id": "log_1781919580972_8adf5c",
+    "created_at": "2026-06-20T01:39:40",
+    "actor": "admin",
+    "action": "RESOURCE_CREATE",
+    "target": "res_1781919580970_89fca5",
+    "detail": "2026 공무원보수 등의 업무지침(인사혁신처예규 제204호) / Public"
+  },
+  {
+    "id": "log_1781919584526_481956",
+    "created_at": "2026-06-20T01:39:44",
+    "actor": "admin",
+    "action": "RESOURCE_CREATE",
+    "target": "res_1781919584523_675e3b",
+    "detail": "2026 공무원보수 등의 업무지침(인사혁신처예규 제204호) / Public"
+  },
+  {
+    "id": "log_1781919588321_bd92e1",
+    "created_at": "2026-06-20T01:39:48",
+    "actor": "admin",
+    "action": "RESOURCE_CREATE",
+    "target": "res_1781919588318_643549",
+    "detail": "2026 공무원보수 등의 업무지침(인사혁신처예규 제204호) / Public"
+  },
+  {
+    "id": "log_1781919590665_771b43",
+    "created_at": "2026-06-20T01:39:50",
+    "actor": "admin",
+    "action": "RESOURCE_CREATE",
+    "target": "res_1781919590663_290a03",
+    "detail": "2026 공무원보수 등의 업무지침(인사혁신처예규 제204호) / Public"
+  },
+  {
+    "id": "log_1781919590902_ee5e37",
+    "created_at": "2026-06-20T01:39:50",
+    "actor": "admin",
+    "action": "RESOURCE_CREATE",
+    "target": "res_1781919590900_9a227e",
+    "detail": "2026 공무원보수 등의 업무지침(인사혁신처예규 제204호) / Public"
+  },
+  {
+    "id": "log_1781919591299_671494",
+    "created_at": "2026-06-20T01:39:51",
+    "actor": "admin",
+    "action": "RESOURCE_CREATE",
+    "target": "res_1781919591296_fdd9e6",
+    "detail": "2026 공무원보수 등의 업무지침(인사혁신처예규 제204호) / Public"
+  },
+  {
+    "id": "log_1781919592712_b92fd6",
+    "created_at": "2026-06-20T01:39:52",
+    "actor": "admin",
+    "action": "RESOURCE_CREATE",
+    "target": "res_1781919592711_f27100",
+    "detail": "2026 공무원보수 등의 업무지침(인사혁신처예규 제204호) / Public"
+  },
+  {
+    "id": "log_1781919616893_7b5498",
+    "created_at": "2026-06-20T01:40:16",
+    "actor": "admin",
+    "action": "RESOURCE_DELETE",
+    "target": "res_1781919592711_f27100",
+    "detail": "2026 공무원보수 등의 업무지침(인사혁신처예규 제204호) / 중복 등록"
+  },
+  {
+    "id": "log_1781919627706_adb671",
+    "created_at": "2026-06-20T01:40:27",
+    "actor": "admin",
+    "action": "RESOURCE_DELETE",
+    "target": "res_1781919591296_fdd9e6",
+    "detail": "2026 공무원보수 등의 업무지침(인사혁신처예규 제204호) / 중복등록"
+  },
+  {
+    "id": "log_1781919632916_b5ccb4",
+    "created_at": "2026-06-20T01:40:32",
+    "actor": "admin",
+    "action": "RESOURCE_DELETE",
+    "target": "res_1781919590663_290a03",
+    "detail": "2026 공무원보수 등의 업무지침(인사혁신처예규 제204호) / 중복등록"
+  },
+  {
+    "id": "log_1781919638336_906d66",
+    "created_at": "2026-06-20T01:40:38",
+    "actor": "admin",
+    "action": "RESOURCE_DELETE",
+    "target": "res_1781919590900_9a227e",
+    "detail": "2026 공무원보수 등의 업무지침(인사혁신처예규 제204호) / 중복등록"
+  },
+  {
+    "id": "log_1781919642923_f6ade8",
+    "created_at": "2026-06-20T01:40:42",
+    "actor": "admin",
+    "action": "RESOURCE_DELETE",
+    "target": "res_1781919588318_643549",
+    "detail": "2026 공무원보수 등의 업무지침(인사혁신처예규 제204호) / 중복등록"
+  },
+  {
+    "id": "log_1781919648603_3e6cc0",
+    "created_at": "2026-06-20T01:40:48",
+    "actor": "admin",
+    "action": "RESOURCE_DELETE",
+    "target": "res_1781919584523_675e3b",
+    "detail": "2026 공무원보수 등의 업무지침(인사혁신처예규 제204호) / 중복등록"
+  },
+  {
+    "id": "log_1781919843328_4b555e",
+    "created_at": "2026-06-20T01:44:03",
+    "actor": "admin",
+    "action": "LOGIN",
+    "target": "admin",
+    "detail": "로그인 성공"
+  },
+  {
+    "id": "log_1781920664558_04ac40",
+    "created_at": "2026-06-20T01:57:44",
+    "actor": "admin",
+    "action": "LOGOUT",
+    "target": "admin",
+    "detail": "세션 타임아웃"
+  },
+  {
+    "id": "log_1781923911077_9d1471",
+    "created_at": "2026-06-20T02:51:51",
+    "actor": "admin",
+    "action": "LOGIN",
+    "target": "admin",
+    "detail": "로그인 성공"
+  },
+  {
+    "id": "log_1781924213595_ddbc3d",
+    "created_at": "2026-06-20T02:56:53",
+    "actor": "admin",
+    "action": "LOGIN",
+    "target": "admin",
+    "detail": "로그인 성공"
+  },
+  {
+    "id": "log_1781924629423_eae24d",
+    "created_at": "2026-06-20T03:03:49",
+    "actor": "admin",
+    "action": "LOGIN_FAIL",
+    "target": "admin",
+    "detail": "로그인 실패"
+  },
+  {
+    "id": "log_1781924632561_ad9b4a",
+    "created_at": "2026-06-20T03:03:52",
+    "actor": "admin",
+    "action": "LOGIN",
+    "target": "admin",
+    "detail": "로그인 성공"
+  },
+  {
+    "id": "log_1781925511964_945713",
+    "created_at": "2026-06-20T03:18:31",
+    "actor": "admin",
+    "action": "LOGOUT",
+    "target": "admin",
+    "detail": "세션 타임아웃"
+  },
+  {
+    "id": "log_1781925521110_e8e4e1",
+    "created_at": "2026-06-20T03:18:41",
+    "actor": "admin",
+    "action": "LOGIN",
+    "target": "admin",
+    "detail": "로그인 성공"
+  },
+  {
+    "id": "log_1781925532488_fbbf93",
+    "created_at": "2026-06-20T03:18:52",
+    "actor": "admin",
+    "action": "LOGOUT",
+    "target": "admin",
+    "detail": "사용자 로그아웃"
+  },
+  {
+    "id": "log_1781925542868_6916c6",
+    "created_at": "2026-06-20T03:19:02",
+    "actor": "admin",
+    "action": "LOGIN",
+    "target": "admin",
+    "detail": "로그인 성공"
+  },
+  {
+    "id": "log_1781925563589_d248bb",
+    "created_at": "2026-06-20T03:19:23",
+    "actor": "admin",
+    "action": "LOGOUT",
+    "target": "admin",
+    "detail": "사용자 로그아웃"
+  },
+  {
+    "id": "log_1781925571150_1c2470",
+    "created_at": "2026-06-20T03:19:31",
+    "actor": "admin",
+    "action": "LOGIN",
+    "target": "admin",
+    "detail": "로그인 성공"
+  },
+  {
+    "id": "log_1781926969100_b78e1b",
+    "created_at": "2026-06-20T03:42:49",
+    "actor": "admin",
+    "action": "LOGIN",
+    "target": "admin",
+    "detail": "로그인 성공"
+  },
+  {
+    "id": "log_1781926985739_ca7135",
+    "created_at": "2026-06-20T03:43:05",
+    "actor": "admin",
+    "action": "LOGOUT",
+    "target": "admin",
+    "detail": "사용자 로그아웃"
+  },
+  {
+    "id": "log_1781926995385_888f96",
+    "created_at": "2026-06-20T03:43:15",
+    "actor": "admin",
+    "action": "LOGIN",
+    "target": "admin",
+    "detail": "로그인 성공"
+  },
+  {
+    "id": "log_1781927971742_656c67",
+    "created_at": "2026-06-20T03:59:31",
+    "actor": "admin",
+    "action": "QUESTION_CREATE",
+    "target": "q_1781927971741_8f24b7",
+    "detail": "출장"
+  },
+  {
+    "id": "log_1781928225514_81614b",
+    "created_at": "2026-06-20T04:03:45",
+    "actor": "admin",
+    "action": "LOGIN",
+    "target": "admin",
+    "detail": "로그인 성공"
+  },
+  {
+    "id": "log_1781928277958_02ea3a",
+    "created_at": "2026-06-20T04:04:37",
+    "actor": "admin",
+    "action": "QUESTION_CREATE",
+    "target": "q_1781928277957_658d81",
+    "detail": "출장"
+  },
+  {
+    "id": "log_1781928318433_c13375",
+    "created_at": "2026-06-20T04:05:18",
+    "actor": "admin",
+    "action": "RESOURCE_DELETE",
+    "target": "res_1781919580970_89fca5",
+    "detail": "2026 공무원보수 등의 업무지침(인사혁신처예규 제204호) / 사유 미입력"
+  },
+  {
+    "id": "log_1781928403968_c7a80f",
+    "created_at": "2026-06-20T04:06:43",
+    "actor": "admin",
+    "action": "RESOURCE_CREATE",
+    "target": "res_1781928403957_f59dbf",
+    "detail": "2026 공무원보수 등의 업무지침(인사혁신처예규 제204호) / Public"
+  },
+  {
+    "id": "log_1781928555141_504f02",
+    "created_at": "2026-06-20T04:09:15",
+    "actor": "admin",
+    "action": "QUESTION_CREATE",
+    "target": "q_1781928555139_938e5c",
+    "detail": "출장"
+  },
+  {
+    "id": "log_1781929010915_d0c5c2",
+    "created_at": "2026-06-20T04:16:50",
+    "actor": "admin",
+    "action": "LOGIN",
+    "target": "admin",
+    "detail": "로그인 성공"
+  },
+  {
+    "id": "log_1781929036135_80061e",
+    "created_at": "2026-06-20T04:17:16",
+    "actor": "admin",
+    "action": "QUESTION_CREATE",
+    "target": "q_1781929036134_46050e",
+    "detail": "출장"
+  },
+  {
+    "id": "log_1781929271094_00c4e5",
+    "created_at": "2026-06-20T04:21:11",
+    "actor": "admin",
+    "action": "AI_INSTRUCTION_UPDATE",
+    "target": "ai_settings",
+    "detail": "AI 지침 수정"
+  },
+  {
+    "id": "log_1781929410906_925bd8",
+    "created_at": "2026-06-20T04:23:30",
+    "actor": "admin",
+    "action": "LOGOUT",
+    "target": "admin",
+    "detail": "사용자 로그아웃"
+  },
+  {
+    "id": "log_1781929517349_232461",
+    "created_at": "2026-06-20T04:25:17",
+    "actor": "admin",
+    "action": "LOGIN",
+    "target": "admin",
+    "detail": "로그인 성공"
+  },
+  {
+    "id": "log_1781929555565_2acc32",
+    "created_at": "2026-06-20T04:25:55",
+    "actor": "admin",
+    "action": "QUESTION_CREATE",
+    "target": "q_1781929555564_e9b208",
+    "detail": "초과근무"
+  },
+  {
+    "id": "log_1781929558480_bc1ceb",
+    "created_at": "2026-06-20T04:25:58",
+    "actor": "admin",
+    "action": "QUESTION_CREATE",
+    "target": "q_1781929558478_eb6f5c",
+    "detail": "초과근무"
+  },
+  {
+    "id": "log_1781929560294_7f44cf",
+    "created_at": "2026-06-20T04:26:00",
+    "actor": "admin",
+    "action": "QUESTION_CREATE",
+    "target": "q_1781929560292_1007cd",
+    "detail": "초과근무"
+  },
+  {
+    "id": "log_1781929567490_2a6e3d",
+    "created_at": "2026-06-20T04:26:07",
+    "actor": "admin",
+    "action": "QUESTION_CREATE",
+    "target": "q_1781929567488_16560f",
+    "detail": "초과근무"
+  },
+  {
+    "id": "log_1781929693083_15fb0c",
+    "created_at": "2026-06-20T04:28:13",
+    "actor": "admin",
+    "action": "LOGIN",
+    "target": "admin",
+    "detail": "로그인 성공"
+  },
+  {
+    "id": "log_1781929933243_b29f60",
+    "created_at": "2026-06-20T04:32:13",
+    "actor": "admin",
+    "action": "AI_INSTRUCTION_UPDATE",
+    "target": "ai_settings",
+    "detail": "AI 지침 수정"
+  },
+  {
+    "id": "log_1781930176918_579405",
+    "created_at": "2026-06-20T04:36:16",
+    "actor": "admin",
+    "action": "LOGIN",
+    "target": "admin",
+    "detail": "로그인 성공"
+  },
+  {
+    "id": "log_1781930310737_080cb7",
+    "created_at": "2026-06-20T04:38:30",
+    "actor": "admin",
+    "action": "AI_INSTRUCTION_UPDATE",
+    "target": "ai_settings",
+    "detail": "AI 지침 수정"
+  },
+  {
+    "id": "log_1781930313622_6e90fe",
+    "created_at": "2026-06-20T04:38:33",
+    "actor": "admin",
+    "action": "AI_INSTRUCTION_UPDATE",
+    "target": "ai_settings",
+    "detail": "AI 지침 수정"
+  },
+  {
+    "id": "log_1781930397129_7ed4e2",
+    "created_at": "2026-06-20T04:39:57",
+    "actor": "admin",
+    "action": "QUESTION_CREATE",
+    "target": "q_1781930397127_b179b6",
+    "detail": "출장"
+  },
+  {
+    "id": "log_1781930401561_027338",
+    "created_at": "2026-06-20T04:40:01",
+    "actor": "admin",
+    "action": "QUESTION_CREATE",
+    "target": "q_1781930401560_9eb57b",
+    "detail": "출장"
+  },
+  {
+    "id": "log_1781930407639_707bdf",
+    "created_at": "2026-06-20T04:40:07",
+    "actor": "admin",
+    "action": "QUESTION_CREATE",
+    "target": "q_1781930407637_e7f84e",
+    "detail": "출장"
+  },
+  {
+    "id": "log_1781930416473_dfeebe",
+    "created_at": "2026-06-20T04:40:16",
+    "actor": "admin",
+    "action": "QUESTION_CREATE",
+    "target": "q_1781930416471_30d3bc",
+    "detail": "출장"
+  },
+  {
+    "id": "log_1781930466229_d087bc",
+    "created_at": "2026-06-20T04:41:06",
+    "actor": "admin",
+    "action": "QUESTION_CREATE",
+    "target": "q_1781930466227_e49ac7",
+    "detail": "출장"
+  },
+  {
+    "id": "log_1781930807783_8e5136",
+    "created_at": "2026-06-20T04:46:47",
+    "actor": "admin",
+    "action": "LOGIN",
+    "target": "admin",
+    "detail": "로그인 성공"
+  },
+  {
+    "id": "log_1781931262193_6fab0c",
+    "created_at": "2026-06-20T04:54:22",
+    "actor": "admin",
+    "action": "LOGIN",
+    "target": "admin",
+    "detail": "로그인 성공"
+  },
+  {
+    "id": "log_1781931392142_920eaa",
+    "created_at": "2026-06-20T04:56:32",
+    "actor": "admin",
+    "action": "LOGIN",
+    "target": "admin",
+    "detail": "로그인 성공"
+  },
+  {
+    "id": "log_1781931606236_98be0f",
+    "created_at": "2026-06-20T05:00:06",
+    "actor": "admin",
+    "action": "LOGIN",
+    "target": "admin",
+    "detail": "로그인 성공"
+  },
+  {
+    "id": "log_1781931771719_320175",
+    "created_at": "2026-06-20T05:02:51",
+    "actor": "admin",
+    "action": "QUESTION_CREATE",
+    "target": "q_1781931771717_2ce4e7",
+    "detail": "출장"
+  },
+  {
+    "id": "log_1781932125100_99c92a",
+    "created_at": "2026-06-20T05:08:45",
+    "actor": "admin",
+    "action": "LOGIN",
+    "target": "admin",
+    "detail": "로그인 성공"
+  },
+  {
+    "id": "log_1781932170885_db7760",
+    "created_at": "2026-06-20T05:09:30",
+    "actor": "admin",
+    "action": "RESOURCE_CREATE",
+    "target": "res_1781932170881_d68e8e",
+    "detail": "교대제 소방공무원 복무지침 개정안(전문) / Private"
+  },
+  {
+    "id": "log_1781932299112_49b341",
+    "created_at": "2026-06-20T05:11:39",
+    "actor": "admin",
+    "action": "AI_INSTRUCTION_UPDATE",
+    "target": "ai_settings",
+    "detail": "AI 지침 수정"
+  },
+  {
+    "id": "log_1781932319062_717c58",
+    "created_at": "2026-06-20T05:11:59",
+    "actor": "admin",
+    "action": "QUESTION_CREATE",
+    "target": "q_1781932319060_b6df0c",
+    "detail": "출장"
+  },
+  {
+    "id": "log_1781932761359_b59a9d",
+    "created_at": "2026-06-20T05:19:21",
+    "actor": "admin",
+    "action": "LOGOUT",
+    "target": "admin",
+    "detail": "사용자 로그아웃"
+  },
+  {
+    "id": "log_1781933091394_6436cf",
+    "created_at": "2026-06-20T05:24:51",
+    "actor": "admin",
+    "action": "LOGIN",
+    "target": "admin",
+    "detail": "로그인 성공"
+  },
+  {
+    "id": "log_1781934146165_f75b5b",
+    "created_at": "2026-06-20T05:42:26",
+    "actor": "admin",
+    "action": "LOGIN",
+    "target": "admin",
+    "detail": "로그인 성공"
+  },
+  {
+    "id": "log_1781934173210_697d1f",
+    "created_at": "2026-06-20T05:42:53",
+    "actor": "admin",
+    "action": "QUESTION_CREATE",
+    "target": "q_1781934173207_6c73cb",
+    "detail": "출장"
+  },
+  {
+    "id": "log_1781934412130_673498",
+    "created_at": "2026-06-20T05:46:52",
+    "actor": "admin",
+    "action": "RESOURCE_CREATE",
+    "target": "res_1781934412126_9c5f33",
+    "detail": "공무원 여비 규정(대통령령)(제36013호)(20260102) / Public"
+  },
+  {
+    "id": "log_1781934444164_a75872",
+    "created_at": "2026-06-20T05:47:24",
+    "actor": "admin",
+    "action": "AI_INSTRUCTION_UPDATE",
+    "target": "ai_settings",
+    "detail": "AI 지침 수정"
+  },
+  {
+    "id": "log_1781934609866_7bcaeb",
+    "created_at": "2026-06-20T05:50:09",
+    "actor": "admin",
+    "action": "RESOURCE_CREATE",
+    "target": "res_1781934609861_7baabd",
+    "detail": "출장여비 정산방법(관외출장) / Private"
+  },
+  {
+    "id": "log_1781934765517_5eeaa3",
+    "created_at": "2026-06-20T05:52:45",
+    "actor": "admin",
+    "action": "RESOURCE_CREATE",
+    "target": "res_1781934765513_f8ac36",
+    "detail": "소방기본법(법률)(제20727호)(20260201) / Public"
+  },
+  {
+    "id": "log_1781934824508_1e6830",
+    "created_at": "2026-06-20T05:53:44",
+    "actor": "admin",
+    "action": "RESOURCE_CREATE",
+    "target": "res_1781934824501_d641e5",
+    "detail": "소방기본법 시행령(대통령령)(제36244호)(20260407) / Public"
+  },
+  {
+    "id": "log_1781934928161_b5cb20",
+    "created_at": "2026-06-20T05:55:28",
+    "actor": "admin",
+    "action": "RESOURCE_CREATE",
+    "target": "res_1781934928156_ad258d",
+    "detail": "소방기본법 시행규칙(행정안전부령)(제00511호)(20240814) / Public"
+  },
+  {
+    "id": "log_1781935041228_9012ba",
+    "created_at": "2026-06-20T05:57:21",
+    "actor": "admin",
+    "action": "RESOURCE_CREATE",
+    "target": "res_1781935041227_99fc3e",
+    "detail": "소방공무원 교육훈련성적 평정규정(소방청예규)(제117호)(20260101) / Public"
+  },
+  {
+    "id": "log_1781935552710_722f63",
+    "created_at": "2026-06-20T06:05:52",
+    "actor": "admin",
+    "action": "RESOURCE_CREATE",
+    "target": "res_1781935552706_d23995",
+    "detail": "충청남도 사무 전결 처리 규칙(충청남도규칙)(제3596호)(20260330) / Public"
+  },
+  {
+    "id": "log_1781935610623_3187fd",
+    "created_at": "2026-06-20T06:06:50",
+    "actor": "admin",
+    "action": "LOGIN",
+    "target": "admin",
+    "detail": "로그인 성공"
+  },
+  {
+    "id": "log_1781936060283_74f389",
+    "created_at": "2026-06-20T06:14:20",
+    "actor": "admin",
+    "action": "RESOURCE_CREATE",
+    "target": "res_1781936060277_6d2fa1",
+    "detail": "[별표 1] 본청의 단위사무별 전결처리 사항(제5조제1항 관련)(충청남도 사무 전결 처리 규칙)_1 / Public"
+  },
+  {
+    "id": "log_1781936075945_32f0d5",
+    "created_at": "2026-06-20T06:14:35",
+    "actor": "admin",
+    "action": "RESOURCE_CREATE",
+    "target": "res_1781936075939_708a1d",
+    "detail": "[별표 2] 직속기관의 단위사무별 전결처리사항(제5조제2항 관련)(충청남도 사무 전결 처리 규칙) / Public"
+  },
+  {
+    "id": "log_1781936177401_cdf37b",
+    "created_at": "2026-06-20T06:16:17",
+    "actor": "admin",
+    "action": "RESOURCE_CREATE",
+    "target": "res_1781936177397_6f17fe",
+    "detail": "소방공무원 복무규정(대통령령)(제35662호)(20250722) / Public"
+  },
+  {
+    "id": "log_1781936454425_5bb78f",
+    "created_at": "2026-06-20T06:20:54",
+    "actor": "admin",
+    "action": "RESOURCE_CREATE",
+    "target": "res_1781936454418_ececee",
+    "detail": "소방공무원 승진임용 규정(대통령령)(제35641호)(20250708) / Public"
+  },
+  {
+    "id": "log_1781936498956_e99690",
+    "created_at": "2026-06-20T06:21:38",
+    "actor": "admin",
+    "action": "RESOURCE_CREATE",
+    "target": "res_1781936498940_ab44a4",
+    "detail": "소방공무원 승진임용 규정 시행규칙(행정안전부령)(제00571호)(20250708) / Public"
+  },
+  {
+    "id": "log_1781936583711_217be9",
+    "created_at": "2026-06-20T06:23:03",
+    "actor": "admin",
+    "action": "RESOURCE_CREATE",
+    "target": "res_1781936583702_c32c78",
+    "detail": "긴급구조대응활동 및 현장지휘에 관한 규칙(행정안전부령)(제00567호)(20250708) / Public"
+  },
+  {
+    "id": "log_1781936663140_debfd3",
+    "created_at": "2026-06-20T06:24:23",
+    "actor": "admin",
+    "action": "RESOURCE_CREATE",
+    "target": "res_1781936663136_2ad6b5",
+    "detail": "소방장비관리법(법률)(제19027호)(20230516) / Public"
+  },
+  {
+    "id": "log_1781936708767_45381b",
+    "created_at": "2026-06-20T06:25:08",
+    "actor": "admin",
+    "action": "RESOURCE_CREATE",
+    "target": "res_1781936708763_62ed88",
+    "detail": "소방장비관리법 시행령(대통령령)(제34565호)(20240611) / Public"
+  },
+  {
+    "id": "log_1781936753928_dadbf4",
+    "created_at": "2026-06-20T06:25:53",
+    "actor": "admin",
+    "action": "RESOURCE_CREATE",
+    "target": "res_1781936753924_318e6e",
+    "detail": "소방장비관리법 시행규칙(행정안전부령)(제00403호)(20230516).pdf / Public"
+  },
+  {
+    "id": "log_1781936814147_806c60",
+    "created_at": "2026-06-20T06:26:54",
+    "actor": "admin",
+    "action": "RESOURCE_CREATE",
+    "target": "res_1781936814131_251f42",
+    "detail": "소방장비관리법 시행규칙(행정안전부령)(제00403호)(20230516).pdf / Public"
+  },
+  {
+    "id": "log_1781936840649_9795e8",
+    "created_at": "2026-06-20T06:27:20",
+    "actor": "admin",
+    "action": "RESOURCE_DELETE",
+    "target": "res_1781936753924_318e6e",
+    "detail": "소방장비관리법 시행규칙(행정안전부령)(제00403호)(20230516).pdf / 중복등록"
+  },
+  {
+    "id": "log_1781936897286_ce34b8",
+    "created_at": "2026-06-20T06:28:17",
+    "actor": "admin",
+    "action": "RESOURCE_CREATE",
+    "target": "res_1781936897281_6bc99c",
+    "detail": "소방공무원법(법률)(제20411호)(20240814) / Public"
+  },
+  {
+    "id": "log_1781937150020_823170",
+    "created_at": "2026-06-20T06:32:30",
+    "actor": "admin",
+    "action": "RESOURCE_CREATE",
+    "target": "res_1781937150015_159ef6",
+    "detail": "충청남도 공무원 복무 조례(충청남도조례)(제5987호)(20250930) / Public"
+  },
+  {
+    "id": "log_1781937163884_0022be",
+    "created_at": "2026-06-20T06:32:43",
+    "actor": "admin",
+    "action": "RESOURCE_CREATE",
+    "target": "res_1781937163878_d402ae",
+    "detail": "[별표] 충청남도 공무원 복무 조례(충청남도조례)(제5987호)(20250930) / Public"
+  },
+  {
+    "id": "log_1781937259790_b736b0",
+    "created_at": "2026-06-20T06:34:19",
+    "actor": "admin",
+    "action": "RESOURCE_CREATE",
+    "target": "res_1781937259784_4ead93",
+    "detail": "충청남도 공무원 복무 조례 시행규칙(충청남도규칙)(제3533호)(20240311) / Public"
+  },
+  {
+    "id": "log_1781937312576_1ea252",
+    "created_at": "2026-06-20T06:35:12",
+    "actor": "admin",
+    "action": "RESOURCE_CREATE",
+    "target": "res_1781937312570_19b423",
+    "detail": "[별표] 충청남도 공무원 복무 조례 시행규칙(충청남도규칙)(제3533호)(20240311) / Public"
+  },
+  {
+    "id": "log_1781937640009_349e99",
+    "created_at": "2026-06-20T06:40:40",
+    "actor": "admin",
+    "action": "RESOURCE_CREATE",
+    "target": "res_1781937640004_74bed6",
+    "detail": "충청남도 의용소방대 설치 및 운영에 관한 조례 시행규칙(충청남도규칙)(제3579호)(20250901) / Public"
+  },
+  {
+    "id": "log_1781937753786_3d58d0",
+    "created_at": "2026-06-20T06:42:33",
+    "actor": "admin",
+    "action": "RESOURCE_CREATE",
+    "target": "res_1781937753778_abea1a",
+    "detail": "[별표] 충청남도 의용소방대 설치 및 운영에 관한 조례 시행규칙(충청남도규칙)(제3579호)(20250901) / Public"
+  },
+  {
+    "id": "log_1781937816222_124c7f",
+    "created_at": "2026-06-20T06:43:36",
+    "actor": "admin",
+    "action": "RESOURCE_CREATE",
+    "target": "res_1781937816217_be8337",
+    "detail": "충청남도 의용소방대 설치 및 운영에 관한 조례(충청남도조례)(제5969호)(20250811) / Public"
+  },
+  {
+    "id": "log_1781937894982_8dc700",
+    "created_at": "2026-06-20T06:44:54",
+    "actor": "admin",
+    "action": "RESOURCE_CREATE",
+    "target": "res_1781937894976_f2003d",
+    "detail": "개인정보 보호법(법률)(제20897호)(20251002) / Public"
+  },
+  {
+    "id": "log_1781937967026_51bba1",
+    "created_at": "2026-06-20T06:46:07",
+    "actor": "admin",
+    "action": "RESOURCE_CREATE",
+    "target": "res_1781937967016_889c80",
+    "detail": "개인정보 보호법 시행령(대통령령)(제36340호)(20260519) / Public"
+  },
+  {
+    "id": "log_1781938718742_abcc82",
+    "created_at": "2026-06-20T06:58:38",
+    "actor": "admin",
+    "action": "LOGIN",
+    "target": "admin",
+    "detail": "로그인 성공"
+  },
+  {
+    "id": "log_1781938858191_585277",
+    "created_at": "2026-06-20T07:00:58",
+    "actor": "admin",
+    "action": "RESOURCE_CREATE",
+    "target": "res_1781938858180_b1f33a",
+    "detail": "지방자치단체 회계관리에 관한 훈령(행정안전부훈령)(제416호)(20260102) / Private"
+  },
+  {
+    "id": "log_1781938861301_99ddfc",
+    "created_at": "2026-06-20T07:01:01",
+    "actor": "admin",
+    "action": "RESOURCE_CREATE",
+    "target": "res_1781938861294_bd0163",
+    "detail": "지방자치단체 회계관리에 관한 훈령(행정안전부훈령)(제416호)(20260102) / Public"
+  },
+  {
+    "id": "log_1781938875715_a69144",
+    "created_at": "2026-06-20T07:01:15",
+    "actor": "admin",
+    "action": "RESOURCE_DELETE",
+    "target": "res_1781938858180_b1f33a",
+    "detail": "지방자치단체 회계관리에 관한 훈령(행정안전부훈령)(제416호)(20260102) / 중복등록"
+  },
+  {
+    "id": "log_1781939001441_79e405",
+    "created_at": "2026-06-20T07:03:21",
+    "actor": "admin",
+    "action": "QUESTION_CREATE",
+    "target": "q_1781939001438_5bc631",
+    "detail": "출장"
+  },
+  {
+    "id": "log_1781939461609_b61bd6",
+    "created_at": "2026-06-20T07:11:01",
+    "actor": "pws3560",
+    "action": "LOGIN_FAIL",
+    "target": "pws3560",
+    "detail": "로그인 실패"
+  },
+  {
+    "id": "log_1781939468986_3c206a",
+    "created_at": "2026-06-20T07:11:08",
+    "actor": "pws3560",
+    "action": "LOGIN_FAIL",
+    "target": "pws3560",
+    "detail": "로그인 실패"
+  },
+  {
+    "id": "log_1781939470055_b91dba",
+    "created_at": "2026-06-20T07:11:10",
+    "actor": "pws3560",
+    "action": "LOGIN_FAIL",
+    "target": "pws3560",
+    "detail": "로그인 실패"
+  },
+  {
+    "id": "log_1781939482337_59f262",
+    "created_at": "2026-06-20T07:11:22",
+    "actor": "pws3560",
+    "action": "REGISTER",
+    "target": "pws3560",
+    "detail": "회원가입"
+  },
+  {
+    "id": "log_1781939486085_50afb1",
+    "created_at": "2026-06-20T07:11:26",
+    "actor": "pws3560",
+    "action": "LOGIN",
+    "target": "pws3560",
+    "detail": "로그인 성공"
+  },
+  {
+    "id": "log_1781939539861_13bc3d",
+    "created_at": "2026-06-20T07:12:19",
+    "actor": "pws3560",
+    "action": "QUESTION_CREATE",
+    "target": "q_1781939539858_989370",
+    "detail": "출장"
+  },
+  {
+    "id": "log_1781939610671_f2793a",
+    "created_at": "2026-06-20T07:13:30",
+    "actor": "pws3560",
+    "action": "QUESTION_CREATE",
+    "target": "q_1781939610669_9d460c",
+    "detail": "출장"
+  },
+  {
+    "id": "log_1781939665875_26e28d",
+    "created_at": "2026-06-20T07:14:25",
+    "actor": "pws3560",
+    "action": "QUESTION_CREATE",
+    "target": "q_1781939665873_f60d90",
+    "detail": "병가"
+  },
+  {
+    "id": "log_1781940094487_ac1962",
+    "created_at": "2026-06-20T07:21:34",
+    "actor": "admin",
+    "action": "LOGOUT",
+    "target": "admin",
+    "detail": "세션 타임아웃"
+  },
+  {
+    "id": "log_1781940271708_f17206",
+    "created_at": "2026-06-20T07:24:31",
+    "actor": "admin",
+    "action": "LOGIN_FAIL",
+    "target": "admin",
+    "detail": "로그인 실패"
+  },
+  {
+    "id": "log_1781940274230_1a6d52",
+    "created_at": "2026-06-20T07:24:34",
+    "actor": "admin",
+    "action": "LOGIN",
+    "target": "admin",
+    "detail": "로그인 성공"
+  },
+  {
+    "id": "log_1781940294510_92cdf1",
+    "created_at": "2026-06-20T07:24:54",
+    "actor": "admin",
+    "action": "QUESTION_CREATE",
+    "target": "q_1781940294507_46d7c5",
+    "detail": "출장"
+  },
+  {
+    "id": "log_1781941016561_fea255",
+    "created_at": "2026-06-20T07:36:56",
+    "actor": "admin",
+    "action": "LOGIN",
+    "target": "admin",
+    "detail": "로그인 성공"
+  },
+  {
+    "id": "log_1781941565904_b87f3f",
+    "created_at": "2026-06-20T07:46:05",
+    "actor": "admin",
+    "action": "LOGIN",
+    "target": "admin",
+    "detail": "로그인 성공"
+  },
+  {
+    "id": "log_1781941616738_27b722",
+    "created_at": "2026-06-20T07:46:56",
+    "actor": "admin",
+    "action": "QUESTION_CREATE",
+    "target": "q_1781941616735_94945b",
+    "detail": "출장"
+  },
+  {
+    "id": "log_1781941619247_9d5ebe",
+    "created_at": "2026-06-20T07:46:59",
+    "actor": "admin",
+    "action": "QUESTION_CREATE",
+    "target": "q_1781941619244_4bfa5b",
+    "detail": "출장"
+  },
+  {
+    "id": "log_1781941648527_421721",
+    "created_at": "2026-06-20T07:47:28",
+    "actor": "pws3560",
+    "action": "LOGIN",
+    "target": "pws3560",
+    "detail": "로그인 성공"
   }
 ]
