@@ -17,7 +17,8 @@
     "attached_file_size": 7146510,
     "attached_file_text_path": "uploads/res_1781928403957_f59dbf/2026 공무원보수 등의 업무지침_인사혁신처예규 제204호_.txt",
     "attached_file_text_length": 603250,
-    "attached_file_text_status": "본문 추출 완료"
+    "attached_file_text_status": "extracted",
+    "ai_search_enabled": true
   },
   {
     "id": "res_1781932170881_d68e8e",
@@ -27,7 +28,7 @@
     "source_url": "",
     "summary": "교대제 소방공무원 복무지침 개정안(전문)",
     "visibility": "Private",
-    "non_public_reason": "",
+    "non_public_reason": "자료실 미공개. 단, AI 답변 근거로 사용 가능하도록 등록된 자료입니다.",
     "created_at": "2026-06-20T05:09:30",
     "checked_at": "2026-06-20",
     "created_by": "admin",
@@ -37,7 +38,8 @@
     "attached_file_size": 498227,
     "attached_file_text_path": "uploads/res_1781932170881_d68e8e/교대제 소방공무원 복무지침 개정안_전문_.txt",
     "attached_file_text_length": 7453,
-    "attached_file_text_status": "본문 추출 완료"
+    "attached_file_text_status": "extracted",
+    "ai_search_enabled": true
   },
   {
     "id": "res_1781934412126_9c5f33",
@@ -57,7 +59,8 @@
     "attached_file_size": 114968,
     "attached_file_text_path": "uploads/res_1781934412126_9c5f33/공무원 여비 규정_대통령령__제36013호__20260102_.txt",
     "attached_file_text_length": 14665,
-    "attached_file_text_status": "본문 추출 완료"
+    "attached_file_text_status": "extracted",
+    "ai_search_enabled": true
   },
   {
     "id": "res_1781934609861_7baabd",
@@ -67,7 +70,7 @@
     "source_url": "",
     "summary": "출장여비 정산방법(관외출장)",
     "visibility": "Private",
-    "non_public_reason": "",
+    "non_public_reason": "자료실 미공개. 단, AI 답변 근거로 사용 가능하도록 등록된 자료입니다.",
     "created_at": "2026-06-20T05:50:09",
     "checked_at": "2026-06-20",
     "created_by": "admin",
@@ -77,7 +80,8 @@
     "attached_file_size": 286730,
     "attached_file_text_path": "uploads/res_1781934609861_7baabd/출장여비 정산방법_관외출장_.txt",
     "attached_file_text_length": 1456,
-    "attached_file_text_status": "본문 추출 완료"
+    "attached_file_text_status": "extracted",
+    "ai_search_enabled": true
   },
   {
     "id": "res_1781934765513_f8ac36",
@@ -97,7 +101,8 @@
     "attached_file_size": 161885,
     "attached_file_text_path": "uploads/res_1781934765513_f8ac36/소방기본법_법률__제20727호__20260201_.txt",
     "attached_file_text_length": 32412,
-    "attached_file_text_status": "본문 추출 완료"
+    "attached_file_text_status": "extracted",
+    "ai_search_enabled": true
   },
   {
     "id": "res_1781934824501_d641e5",
@@ -117,7 +122,8 @@
     "attached_file_size": 125845,
     "attached_file_text_path": "uploads/res_1781934824501_d641e5/소방기본법 시행령_대통령령__제36244호__20260407_.txt",
     "attached_file_text_length": 17424,
-    "attached_file_text_status": "본문 추출 완료"
+    "attached_file_text_status": "extracted",
+    "ai_search_enabled": true
   },
   {
     "id": "res_1781934928156_ad258d",
@@ -137,7 +143,8 @@
     "attached_file_size": 105391,
     "attached_file_text_path": "uploads/res_1781934928156_ad258d/소방기본법 시행규칙_행정안전부령__제00511호__20240814_.txt",
     "attached_file_text_length": 13338,
-    "attached_file_text_status": "본문 추출 완료"
+    "attached_file_text_status": "extracted",
+    "ai_search_enabled": true
   },
   {
     "id": "res_1781935041227_99fc3e",
@@ -157,7 +164,8 @@
     "attached_file_size": 86708,
     "attached_file_text_path": "uploads/res_1781935041227_99fc3e/소방공무원 교육훈련성적 평정규정_소방청예규__제117호__20260101_.txt",
     "attached_file_text_length": 6700,
-    "attached_file_text_status": "본문 추출 완료"
+    "attached_file_text_status": "extracted",
+    "ai_search_enabled": true
   },
   {
     "id": "res_1781935552706_d23995",
@@ -177,7 +185,8 @@
     "attached_file_size": 88415,
     "attached_file_text_path": "uploads/res_1781935552706_d23995/충청남도 사무 전결 처리 규칙_충청남도규칙__제3596호__20260330_.txt",
     "attached_file_text_length": 6765,
-    "attached_file_text_status": "본문 추출 완료"
+    "attached_file_text_status": "extracted",
+    "ai_search_enabled": true
   },
   {
     "id": "res_1781936060277_6d2fa1",
@@ -197,7 +206,8 @@
     "attached_file_size": 276458,
     "attached_file_text_path": "uploads/res_1781936060277_6d2fa1/_별표 1_ 본청의 단위사무별 전결처리 사항_제5조제1항 관련__충청남도 사무 전결 처리 규칙__1.txt",
     "attached_file_text_length": 24049,
-    "attached_file_text_status": "본문 추출 완료"
+    "attached_file_text_status": "extracted",
+    "ai_search_enabled": true
   },
   {
     "id": "res_1781936075939_708a1d",
@@ -217,7 +227,8 @@
     "attached_file_size": 311025,
     "attached_file_text_path": "uploads/res_1781936075939_708a1d/_별표 2_ 직속기관의 단위사무별 전결처리사항_제5조제2항 관련__충청남도 사무 전결 처리 규칙_.txt",
     "attached_file_text_length": 38132,
-    "attached_file_text_status": "본문 추출 완료"
+    "attached_file_text_status": "extracted",
+    "ai_search_enabled": true
   },
   {
     "id": "res_1781936177397_6f17fe",
@@ -237,7 +248,8 @@
     "attached_file_size": 95394,
     "attached_file_text_path": "uploads/res_1781936177397_6f17fe/소방공무원 복무규정_대통령령__제35662호__20250722_.txt",
     "attached_file_text_length": 7016,
-    "attached_file_text_status": "본문 추출 완료"
+    "attached_file_text_status": "extracted",
+    "ai_search_enabled": true
   },
   {
     "id": "res_1781936454418_ececee",
@@ -257,7 +269,8 @@
     "attached_file_size": 186169,
     "attached_file_text_path": "uploads/res_1781936454418_ececee/소방공무원 승진임용 규정_대통령령__제35641호__20250708_.txt",
     "attached_file_text_length": 44430,
-    "attached_file_text_status": "본문 추출 완료"
+    "attached_file_text_status": "extracted",
+    "ai_search_enabled": true
   },
   {
     "id": "res_1781936498940_ab44a4",
@@ -277,7 +290,8 @@
     "attached_file_size": 910595,
     "attached_file_text_path": "uploads/res_1781936498940_ab44a4/소방공무원 승진임용 규정 시행규칙_행정안전부령__제00571호__20250708_.txt",
     "attached_file_text_length": 32766,
-    "attached_file_text_status": "본문 추출 완료"
+    "attached_file_text_status": "extracted",
+    "ai_search_enabled": true
   },
   {
     "id": "res_1781936583702_c32c78",
@@ -297,7 +311,8 @@
     "attached_file_size": 1214681,
     "attached_file_text_path": "uploads/res_1781936583702_c32c78/긴급구조대응활동 및 현장지휘에 관한 규칙_행정안전부령__제00567호__20250708_.txt",
     "attached_file_text_length": 39098,
-    "attached_file_text_status": "본문 추출 완료"
+    "attached_file_text_status": "extracted",
+    "ai_search_enabled": true
   },
   {
     "id": "res_1781936663136_2ad6b5",
@@ -317,7 +332,8 @@
     "attached_file_size": 140078,
     "attached_file_text_path": "uploads/res_1781936663136_2ad6b5/소방장비관리법_법률__제19027호__20230516_.txt",
     "attached_file_text_length": 27808,
-    "attached_file_text_status": "본문 추출 완료"
+    "attached_file_text_status": "extracted",
+    "ai_search_enabled": true
   },
   {
     "id": "res_1781936708763_62ed88",
@@ -337,7 +353,8 @@
     "attached_file_size": 708502,
     "attached_file_text_path": "uploads/res_1781936708763_62ed88/소방장비관리법 시행령_대통령령__제34565호__20240611_.txt",
     "attached_file_text_length": 24332,
-    "attached_file_text_status": "본문 추출 완료"
+    "attached_file_text_status": "extracted",
+    "ai_search_enabled": true
   },
   {
     "id": "res_1781936814131_251f42",
@@ -357,7 +374,8 @@
     "attached_file_size": 1018549,
     "attached_file_text_path": "uploads/res_1781936814131_251f42/소방장비관리법 시행규칙_행정안전부령__제00403호__20230516_.txt",
     "attached_file_text_length": 19485,
-    "attached_file_text_status": "본문 추출 완료"
+    "attached_file_text_status": "extracted",
+    "ai_search_enabled": true
   },
   {
     "id": "res_1781936897281_6bc99c",
@@ -377,7 +395,8 @@
     "attached_file_size": 110540,
     "attached_file_text_path": "uploads/res_1781936897281_6bc99c/소방공무원법_법률__제20411호__20240814_.txt",
     "attached_file_text_length": 12746,
-    "attached_file_text_status": "본문 추출 완료"
+    "attached_file_text_status": "extracted",
+    "ai_search_enabled": true
   },
   {
     "id": "res_1781937150015_159ef6",
@@ -397,7 +416,8 @@
     "attached_file_size": 98112,
     "attached_file_text_path": "uploads/res_1781937150015_159ef6/충청남도 공무원 복무 조례_충청남도조례__제5987호__20250930_.txt",
     "attached_file_text_length": 7408,
-    "attached_file_text_status": "본문 추출 완료"
+    "attached_file_text_status": "extracted",
+    "ai_search_enabled": true
   },
   {
     "id": "res_1781937163878_d402ae",
@@ -417,7 +437,8 @@
     "attached_file_size": 209852,
     "attached_file_text_path": "uploads/res_1781937163878_d402ae/별표.txt",
     "attached_file_text_length": 1585,
-    "attached_file_text_status": "본문 추출 완료"
+    "attached_file_text_status": "extracted",
+    "ai_search_enabled": true
   },
   {
     "id": "res_1781937259784_4ead93",
@@ -437,7 +458,8 @@
     "attached_file_size": 68368,
     "attached_file_text_path": "uploads/res_1781937259784_4ead93/충청남도 공무원 복무 조례 시행규칙_충청남도규칙__제3533호__20240311_.txt",
     "attached_file_text_length": 2812,
-    "attached_file_text_status": "본문 추출 완료"
+    "attached_file_text_status": "extracted",
+    "ai_search_enabled": true
   },
   {
     "id": "res_1781937312570_19b423",
@@ -457,7 +479,8 @@
     "attached_file_size": 261788,
     "attached_file_text_path": "uploads/res_1781937312570_19b423/_별표_ 충청남도 공무원 복무 조례 시행규칙_충청남도규칙__제3533호__20240311_.txt",
     "attached_file_text_length": 1200,
-    "attached_file_text_status": "본문 추출 완료"
+    "attached_file_text_status": "extracted",
+    "ai_search_enabled": true
   },
   {
     "id": "res_1781937640004_74bed6",
@@ -477,7 +500,8 @@
     "attached_file_size": 73676,
     "attached_file_text_path": "uploads/res_1781937640004_74bed6/충청남도 의용소방대 설치 및 운영에 관한 조례 시행규칙_충청남도규칙__제3579호__20250901_.txt",
     "attached_file_text_length": 3752,
-    "attached_file_text_status": "본문 추출 완료"
+    "attached_file_text_status": "extracted",
+    "ai_search_enabled": true
   },
   {
     "id": "res_1781937753778_abea1a",
@@ -497,7 +521,8 @@
     "attached_file_size": 1365419,
     "attached_file_text_path": "uploads/res_1781937753778_abea1a/_별표_ 충청남도 의용소방대 설치 및 운영에 관한 조례 시행규칙_충청남도규칙__제3579호__20250901_.txt",
     "attached_file_text_length": 19993,
-    "attached_file_text_status": "본문 추출 완료"
+    "attached_file_text_status": "extracted",
+    "ai_search_enabled": true
   },
   {
     "id": "res_1781937816217_be8337",
@@ -517,7 +542,8 @@
     "attached_file_size": 117883,
     "attached_file_text_path": "uploads/res_1781937816217_be8337/충청남도 의용소방대 설치 및 운영에 관한 조례_충청남도조례__제5969호__20250811_.txt",
     "attached_file_text_length": 15320,
-    "attached_file_text_status": "본문 추출 완료"
+    "attached_file_text_status": "extracted",
+    "ai_search_enabled": true
   },
   {
     "id": "res_1781937894976_f2003d",
@@ -537,7 +563,8 @@
     "attached_file_size": 292548,
     "attached_file_text_path": "uploads/res_1781937894976_f2003d/개인정보 보호법_법률__제20897호__20251002_.txt",
     "attached_file_text_length": 114665,
-    "attached_file_text_status": "본문 추출 완료"
+    "attached_file_text_status": "extracted",
+    "ai_search_enabled": true
   },
   {
     "id": "res_1781937967016_889c80",
@@ -557,7 +584,8 @@
     "attached_file_size": 864719,
     "attached_file_text_path": "uploads/res_1781937967016_889c80/개인정보 보호법 시행령_대통령령__제36340호__20260519_.txt",
     "attached_file_text_length": 118453,
-    "attached_file_text_status": "본문 추출 완료"
+    "attached_file_text_status": "extracted",
+    "ai_search_enabled": true
   },
   {
     "id": "res_1781938861294_bd0163",
@@ -577,6 +605,7 @@
     "attached_file_size": 4754449,
     "attached_file_text_path": "uploads/res_1781938861294_bd0163/지방자치단체 회계관리에 관한 훈령_행정안전부훈령__제416호__20260102_.txt",
     "attached_file_text_length": 122539,
-    "attached_file_text_status": "본문 추출 완료"
+    "attached_file_text_status": "extracted",
+    "ai_search_enabled": true
   }
 ]

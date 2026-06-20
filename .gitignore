@@ -1,12 +1,24 @@
-
 # secrets
 .streamlit/secrets.toml
 secrets.toml
+.env
 
 # python cache
 __pycache__/
 *.pyc
 *.pyo
 
+# uploaded files
+data/uploads/
+
+# runtime data
+data/users.json
+data/questions.json
+data/audit_logs.json
+data/admin_requests.json
+data/resource_requests.json
+data/delete_requests.json
+
 # system files
 .DS_Store
+Thumbs.db

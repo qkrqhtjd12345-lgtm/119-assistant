@@ -40,7 +40,7 @@ try:
 except Exception:
     PdfReader = None
 APP_NAME = "충남119행정비서"
-APP_VERSION = "v1.0.12 MVP"
+APP_VERSION = "v1.0.13 MVP"
 DATA_DIR = Path(__file__).parent / "data"
 UPLOAD_DIR = DATA_DIR / "uploads"
 SESSION_TIMEOUT_SECONDS = 10 * 60
@@ -52,6 +52,7 @@ FILES = {
     "audit_logs": DATA_DIR / "audit_logs.json",
     "notices": DATA_DIR / "notices.json",
     "admin_requests": DATA_DIR / "admin_requests.json",
+    "delete_requests": DATA_DIR / "delete_requests.json",
     "ai_settings": DATA_DIR / "ai_settings.json",
 }
 
@@ -99,6 +100,77 @@ VISIBLE_TO_USER = {"Public"}
 
 def normalize_visibility(value: str | None) -> str:
     return "Public" if value == "Public" else "Private"
+
+
+def is_user_visible_resource(resource: dict[str, Any]) -> bool:
+    """일반 사용자 자료실에 표시할 자료인지 판단한다.
+
+    공개범위는 '자료실 표시 여부'만 의미한다. AI 검색 사용 여부와 분리한다.
+    """
+    return normalize_visibility(resource.get("visibility")) in VISIBLE_TO_USER and not resource.get("deleted")
+
+
+def is_text_extracted_status(value: Any) -> bool:
+    """기존 자료와 새 자료의 본문 추출 성공 상태값을 모두 인정한다."""
+    return str(value or "").strip() in ["extracted", "본문 추출 완료", "추출 완료", "성공"]
+
+
+def is_ai_usable_resource(resource: dict[str, Any]) -> bool:
+    """AI 답변 근거로 사용할 수 있는 등록 자료인지 판단한다.
+
+    원칙:
+    - Public/Private는 자료실 노출 여부일 뿐이다.
+    - 등록되어 있고 본문이 추출된 자료는 AI 검색에 사용할 수 있다.
+    - 단, 삭제됨·사용 금지·업로드 금지·ai_search_enabled=false 자료는 제외한다.
+    """
+    if resource.get("deleted"):
+        return False
+
+    if resource.get("ai_search_enabled") is False:
+        return False
+
+    status = str(resource.get("status", "") or "").strip()
+    if status in ["삭제됨", "사용 금지", "업로드 금지", "AI 검색 제외"]:
+        return False
+
+    text_path = str(resource.get("attached_file_text_path", "") or "").strip()
+    text_length = int(resource.get("attached_file_text_length", 0) or 0)
+    direct_text = str(resource.get("attached_file_text") or resource.get("pdf_text") or resource.get("text") or "").strip()
+
+    if direct_text:
+        return True
+
+    if not text_path or text_length <= 0:
+        return False
+
+    text_status = str(resource.get("attached_file_text_status", "") or "").strip()
+    if text_status and not is_text_extracted_status(text_status):
+        return False
+
+    return True
+
+
+def ai_unusable_reason(resource: dict[str, Any]) -> str:
+    """관리자 화면에서 AI 검색 제외 사유를 보여주기 위한 설명."""
+    if resource.get("deleted"):
+        return "삭제됨"
+    if resource.get("ai_search_enabled") is False:
+        return "AI 검색 제외"
+    status = str(resource.get("status", "") or "").strip()
+    if status in ["삭제됨", "사용 금지", "업로드 금지", "AI 검색 제외"]:
+        return status
+
+    text_path = str(resource.get("attached_file_text_path", "") or "").strip()
+    text_length = int(resource.get("attached_file_text_length", 0) or 0)
+    direct_text = str(resource.get("attached_file_text") or resource.get("pdf_text") or resource.get("text") or "").strip()
+    if not direct_text and (not text_path or text_length <= 0):
+        return "본문 없음"
+
+    text_status = str(resource.get("attached_file_text_status", "") or "").strip()
+    if text_status and not is_text_extracted_status(text_status):
+        return "본문 추출 실패 또는 스캔본"
+
+    return "사용 가능"
 
 
 RESOURCE_CATEGORIES = ["법령\u00b7규칙", "조례\u00b7훈령", "지침\u00b7내부 규정", "기타"]
@@ -290,7 +362,6 @@ BLOCK_PATTERNS: list[tuple[str, str]] = [
     ("계좌번호 의심", r"\b\d{2,6}[-\s]\d{2,6}[-\s]\d{2,8}(?:[-\s]\d{1,4})?\b"),
     ("차량번호 의심", r"\b\d{2,3}[가-힣]\s?\d{4}\b"),
     ("상세 주소 의심", r"[가-힣A-Za-z0-9]+(?:시|군|구)\s+[가-힣A-Za-z0-9]+(?:로|길)\s*\d+"),
-    ("특정 개인 실명과 소속 의심", r"[가-힣]{2,4}\s*(?:소방서|119안전센터|센터|구조대|구급대|과|팀|계)"),
 ]
 
 BLOCK_KEYWORDS = [
@@ -314,18 +385,154 @@ BLOCK_KEYWORDS = [
     "내부 시스템",
 ]
 
+FIRE_RANK_TERMS = [
+    "소방사", "소방교", "소방장", "소방위", "소방경",
+    "소방령", "소방정", "소방준감", "소방감", "소방정감", "소방총감",
+]
+
+GENERAL_WORK_TERMS = [
+    "연가", "병가", "공가", "특별휴가", "휴가", "복무", "여비", "출장",
+    "유류비", "운임", "운임비", "교통비", "초과근무", "시간외", "당직",
+    "비번", "휴무", "근무시간", "여행", "관외", "복귀", "신고", "허가",
+    "계급", "재직기간", "규정", "조례", "시행규칙", "지침", "법령",
+    "기준", "개수", "일수", "설명", "알려줘", "확인", "처리",
+    "징계", "감사", "인사", "승진", "평정",
+]
+
+NOT_PERSON_NAME_TERMS = set(FIRE_RANK_TERMS + GENERAL_WORK_TERMS + [
+    "소방", "소방공무원", "공무원", "국가공무원", "지방공무원", "충남", "충청남도",
+    "소방청", "법제처", "행정안전부", "인사혁신처", "법률", "대통령령", "시행령",
+    "시행규칙", "자료명", "발행기관", "출처", "공개", "비공개", "관리자",
+    "사용자", "질문", "답변", "등록", "자료", "근거", "별표", "본문",
+    "천안", "홍성", "논산", "대전", "공주", "보령", "아산", "서산", "당진",
+    "계룡", "금산", "부여", "서천", "청양", "예산", "태안",
+])
+
+ORG_TERMS = ["소방서", "소방본부", "119안전센터", "안전센터", "구조대", "구급대", "센터", "본부", "과", "팀", "계"]
+PERSONAL_CASE_TERMS = ["병가", "진단서", "병명", "치료기록", "의무기록", "건강정보", "징계", "수사", "감사", "민원", "민원인", "진정", "내역", "기록", "처분", "조사"]
+ALWAYS_BLOCK_KEYWORDS = ["대외비", "보안자료", "온나라", "내부 시스템", "주민등록번호", "전화번호", "계좌번호"]
+PRIVATE_DATA_KEYWORDS = ["비공개"]
+
+
+def _tokens_for_privacy(text: str) -> list[str]:
+    return re.findall(r"[가-힣A-Za-z0-9○◯Oo]+", text)
+
+
+def _contains_obvious_identifier(text: str) -> bool:
+    return any(re.search(pattern, text) for _, pattern in BLOCK_PATTERNS)
+
+
+def is_general_work_question(text: str) -> bool:
+    """소방 계급·복무·법령을 묻는 일반 업무 질문인지 확인한다.
+
+    예: '소방사 계급 연가 개수', '소방공무원 복무규정 여행의 제한'
+    위와 같은 질문은 개인정보가 아니므로 차단하지 않는다.
+    """
+    compact = re.sub(r"\s+", "", text)
+    has_rank = any(term in text or term in compact for term in FIRE_RANK_TERMS)
+    has_work_term = any(term in text or term in compact for term in GENERAL_WORK_TERMS)
+    has_rule_term = any(term in text for term in ["규정", "조례", "시행규칙", "법령", "지침", "기준", "일수", "개수", "설명"])
+
+    if (has_rank and has_work_term) or (has_work_term and has_rule_term):
+        return True
+
+    return False
+
+
+def _is_person_name_candidate(word: str) -> bool:
+    word = word.strip()
+    if not re.fullmatch(r"[가-힣]{2,4}", word):
+        return False
+    if word in NOT_PERSON_NAME_TERMS:
+        return False
+    if any(term in word for term in ORG_TERMS):
+        return False
+    if any(rank in word for rank in FIRE_RANK_TERMS):
+        return False
+    if word.endswith(("규정", "조례", "법령", "자료", "기준", "여비", "연가", "병가", "공가", "휴가", "계급")):
+        return False
+    return True
+
+
+def _has_masked_person_name(text: str) -> bool:
+    return bool(re.search(r"[가-힣]{1,2}\s*(?:O|o|0|○|◯|＊|\*){1,3}", text))
+
+
+def has_person_name_with_org(text: str) -> bool:
+    """실명 후보가 소속·계급·개인 사건 맥락과 함께 있는 경우만 차단한다.
+
+    '논산소방서 병가 기준'처럼 기관명만 있는 일반 질문은 차단하지 않는다.
+    """
+    tokens = _tokens_for_privacy(text)
+    if not tokens:
+        return False
+
+    for i, word in enumerate(tokens):
+        if not _is_person_name_candidate(word):
+            continue
+
+        nearby = " ".join(tokens[max(0, i - 4): i + 5])
+        has_org = any(org in nearby for org in ORG_TERMS)
+        has_rank = any(rank in nearby for rank in FIRE_RANK_TERMS)
+        has_case = any(term in nearby or term in text for term in PERSONAL_CASE_TERMS)
+
+        if has_org and (has_rank or has_case):
+            return True
+        if has_case and any(term in text for term in ["내역", "기록", "처분", "조사", "진단서", "병명"]):
+            return True
+
+    return False
+
 
 def detect_sensitive_text(text: str) -> list[str]:
+    """질문 원문 저장 전 개인정보·민감정보·보안자료를 탐지한다.
+
+    개선 사항:
+    - '소방사', '소방교' 등 계급명은 실명 후보에서 제외한다.
+    - 일반 복무·법령 질문은 차단하지 않는다.
+    - 징계·감사·병가 같은 단어는 실명/소속/내역 등 개인 사건 맥락이 있을 때 차단한다.
+    """
     reasons: list[str] = []
     normalized = text.strip()
+
+    if not normalized:
+        return []
+
+    phone_found = re.search(r"\b01[016789][-\s]?\d{3,4}[-\s]?\d{4}\b", normalized)
+
     for label, pattern in BLOCK_PATTERNS:
+        if label == "계좌번호 의심" and phone_found:
+            continue
         if re.search(pattern, normalized):
             reasons.append(label)
-    for keyword in BLOCK_KEYWORDS:
-        if keyword in normalized:
-            reasons.append(f"금지 키워드: {keyword}")
-    return sorted(set(reasons))
 
+    if has_person_name_with_org(normalized):
+        reasons.append("특정 개인 실명과 소속 의심")
+
+    if _has_masked_person_name(normalized) and any(term in normalized for term in PERSONAL_CASE_TERMS):
+        reasons.append("익명 처리된 개인 사건 정보 의심")
+
+    general_work_question = is_general_work_question(normalized)
+    has_person_context = has_person_name_with_org(normalized) or _has_masked_person_name(normalized)
+
+    for keyword in BLOCK_KEYWORDS:
+        if keyword not in normalized:
+            continue
+
+        if keyword in ALWAYS_BLOCK_KEYWORDS:
+            reasons.append(f"금지 키워드: {keyword}")
+            continue
+
+        if keyword in PRIVATE_DATA_KEYWORDS:
+            if not general_work_question:
+                reasons.append(f"금지 키워드: {keyword}")
+            continue
+
+        if keyword in PERSONAL_CASE_TERMS:
+            if has_person_context or _contains_obvious_identifier(normalized):
+                reasons.append(f"개인 사건 관련 키워드: {keyword}")
+
+    return sorted(set(reasons))
 
 def classify_question_category(question: str) -> str:
     """질문 내용을 기반으로 질문 분야를 자동 분류한다.
@@ -333,26 +540,35 @@ def classify_question_category(question: str) -> str:
     운영 단계에서 LLM 분류기나 내부 태그 사전으로 교체 가능하다.
     """
     text = question.strip().lower()
+    compact = re.sub(r"\s+", "", text)
     keyword_map: list[tuple[str, list[str]]] = [
         ("병가", ["병가", "진단서", "질병", "아프", "입원", "통원", "병원", "치료", "공상", "요양"]),
-        ("연가", ["연가", "휴가", "반차", "연차", "특별휴가", "경조사", "휴무"]),
-        ("출장", ["출장", "여비", "관외", "관내", "출장비", "복귀", "교육출장"]),
+        ("연가", ["연가", "휴가", "반차", "연차", "특별휴가", "경조사", "휴무", "연가일수", "재직기간"]),
+        ("출장", ["출장", "여비", "관내", "출장비", "교육출장", "유류비", "운임", "운임비", "교통비", "자가용"]),
         ("교육", ["교육", "훈련", "강의", "연수", "사이버", "집합교육", "교육명령"]),
         ("초과근무", ["초과", "시간외", "야근", "대체휴무", "비번", "당비비", "주주야야", "수당"]),
         ("인사", ["인사", "전보", "전입", "전출", "승진", "근평", "평정", "보직", "징계"]),
         ("감사", ["감사", "조사", "민원", "감찰", "처분", "주의", "경고", "지적"]),
         ("예산", ["예산", "회계", "지출", "품의", "계약", "구매", "카드", "물품", "정산"]),
-        ("복무", ["복무", "공가", "근무", "근태", "결재", "출근", "퇴근", "지각", "조퇴", "외출", "교대"]),
+        ("복무", ["복무", "공가", "근무", "근태", "결재", "출근", "퇴근", "지각", "조퇴", "외출", "교대", "여행", "여행의제한", "관외", "복귀", "신고", "허가"]),
     ]
     scores: dict[str, int] = {category: 0 for category in QUESTION_CATEGORIES}
     for category, keywords in keyword_map:
         for keyword in keywords:
-            if keyword.lower() in text:
+            keyword_lower = keyword.lower()
+            if keyword_lower in text or keyword_lower.replace(" ", "") in compact:
                 scores[category] = scores.get(category, 0) + 1
+
+    # '여행의 제한', '3시간 이내 복귀'는 출장비가 아니라 복무규정 쪽으로 우선 분류한다.
+    if any(term in compact for term in ["여행의제한", "3시간", "직무복귀", "소속소방기관"]):
+        scores["복무"] = scores.get("복무", 0) + 3
+
+    # '연가 개수/일수'는 계급 표현이 있어도 연가 분야로 우선 분류한다.
+    if "연가" in compact and any(term in compact for term in ["개수", "일수", "며칠", "재직기간", "계급"]):
+        scores["연가"] = scores.get("연가", 0) + 3
+
     best_category = max(scores, key=scores.get)
     return best_category if scores.get(best_category, 0) > 0 else "기타"
-
-
 # -----------------------------------------------------------------------------
 # 초기 데이터
 # -----------------------------------------------------------------------------
@@ -400,6 +616,8 @@ def init_storage() -> None:
         )
     if not FILES["admin_requests"].exists():
         save_json("admin_requests", [])
+    if not FILES["delete_requests"].exists():
+        save_json("delete_requests", [])
     if not FILES["ai_settings"].exists():
         save_json(
             "ai_settings",
@@ -469,9 +687,10 @@ def normalize_resource_category(value: str | None) -> str:
 
 
 def normalize_existing_data() -> None:
-    """기존 JSON 데이터에 남아 있는 예전 공개범위·자료 분류값을 현재 구조로 정리한다."""
+    """기존 JSON 데이터에 남아 있는 예전 공개범위·자료 분류값·본문 추출 상태값을 현재 구조로 정리한다."""
     resources = load_json("resources", [])
     changed = False
+
     for resource in resources:
         old_visibility = resource.get("visibility")
         new_visibility = normalize_visibility(old_visibility)
@@ -480,11 +699,39 @@ def normalize_existing_data() -> None:
             if new_visibility == "Private" and not resource.get("non_public_reason"):
                 resource["non_public_reason"] = "기존 공개범위 값을 비공개로 정리"
             changed = True
+
         old_category = resource.get("category")
         new_category = normalize_resource_category(old_category)
         if old_category != new_category:
             resource["category"] = new_category
             changed = True
+
+        text_path = str(resource.get("attached_file_text_path", "") or "").strip()
+        text_length = int(resource.get("attached_file_text_length", 0) or 0)
+        text_status = str(resource.get("attached_file_text_status", "") or "").strip()
+
+        # 과거 버전에서 저장된 한글 상태값을 새 코드 기준으로 통일한다.
+        if text_status in ["본문 추출 완료", "추출 완료", "성공"] and text_path and text_length > 0:
+            resource["attached_file_text_status"] = "extracted"
+            changed = True
+        elif text_status in ["실패 또는 스캔본", "본문 없음", "추출 실패"] and not text_path:
+            resource["attached_file_text_status"] = "empty_or_scan_pdf"
+            changed = True
+
+        # 등록된 자료는 기본적으로 AI 검색 사용 대상으로 둔다.
+        # 관리자가 명시적으로 false로 바꾼 경우에는 유지한다.
+        if "ai_search_enabled" not in resource and (text_path or str(resource.get("attached_file_text", "")).strip()):
+            resource["ai_search_enabled"] = True
+            changed = True
+
+        if is_text_extracted_status(resource.get("attached_file_text_status")) and text_path:
+            if not resource.get("attached_file_text_chunk_count"):
+                full_text = read_resource_attached_text(resource, max_chars=None)
+                if full_text:
+                    resource["attached_file_text_length"] = len(full_text)
+                    resource["attached_file_text_chunk_count"] = len(split_text_chunks(full_text))
+                    changed = True
+
     if changed:
         save_json("resources", resources)
 
@@ -501,6 +748,7 @@ def normalize_existing_data() -> None:
             req_changed = True
     if req_changed:
         save_json("resource_requests", requests)
+
 
 
 def month_key_from_iso(value: str) -> str:
@@ -1349,8 +1597,17 @@ def get_ai_instruction() -> str:
 def safe_filename(filename: str) -> str:
     name = Path(filename or "uploaded.pdf").name
     name = re.sub(r"[^0-9A-Za-z가-힣._ -]", "_", name).strip()
-    return name or "uploaded.pdf"
+    if not name:
+        name = "uploaded.pdf"
 
+    stem = Path(name).stem or "uploaded"
+    suffix = Path(name).suffix or ".pdf"
+
+    # 일부 배포 환경에서 긴 파일명이 저장 오류를 일으킬 수 있어 내부 저장명 길이를 제한한다.
+    if len(stem) > 80:
+        stem = stem[:80].rstrip(" ._-")
+
+    return f"{stem}{suffix}"
 
 def extract_pdf_text(file_path: Path, max_chars: int = 120000) -> str:
     """PDF에서 검색 가능한 텍스트를 추출한다.
@@ -1400,6 +1657,10 @@ def save_resource_pdf(resource_id: str, uploaded_file: Any) -> dict[str, str | i
         raise ValueError("PDF 파일만 첨부할 수 있습니다.")
 
     data = uploaded_file.getvalue()
+    max_size = 20 * 1024 * 1024
+
+    if len(data) > max_size:
+        raise ValueError("PDF 파일은 20MB 이하만 첨부할 수 있습니다.")
 
     if not data.startswith(b"%PDF"):
         raise ValueError("올바른 PDF 파일이 아닙니다.")
@@ -1412,11 +1673,13 @@ def save_resource_pdf(resource_id: str, uploaded_file: Any) -> dict[str, str | i
 
     text = extract_pdf_text(target_path)
     text_path = ""
+    chunk_count = 0
 
     if text:
         text_file = target_path.with_suffix(".txt")
         text_file.write_text(text, encoding="utf-8")
         text_path = str(text_file.relative_to(DATA_DIR))
+        chunk_count = len(split_text_chunks(text))
 
     return {
         "attached_file_name": filename,
@@ -1425,7 +1688,10 @@ def save_resource_pdf(resource_id: str, uploaded_file: Any) -> dict[str, str | i
         "attached_file_text_path": text_path,
         "attached_file_text_length": len(text),
         "attached_file_text_status": "extracted" if text else "empty_or_scan_pdf",
+        "attached_file_text_chunk_count": chunk_count,
+        "ai_search_enabled": True,
     }
+
 
 def read_resource_attached_text(resource: dict[str, Any], max_chars: int | None = None) -> str:
     """자료에 연결된 PDF 추출문을 읽는다.
@@ -1515,10 +1781,32 @@ def expand_question_terms(question: str) -> list[str]:
         ],
         "관용차": ["관용차", "공용차량", "공용 차량", "운임", "자동차운임"],
         "공용차량": ["공용차량", "공용 차량", "관용차", "운임", "자동차운임"],
-        "병가": ["병가", "질병", "진단서", "복무", "휴가"],
-        "연가": ["연가", "휴가", "복무"],
+        "병가": ["병가", "질병", "진단서", "복무", "휴가", "국가공무원 복무규정", "소방공무원 복무규정"],
+        "연가": [
+            "연가", "휴가", "복무", "재직기간", "재직기간별", "연가일수", "연가 일수",
+            "공무원의 재직기간별 연가 일수", "국가공무원 복무규정", "제15조",
+            "소방공무원 복무규정", "준용",
+        ],
+        "계급": [
+            "계급", "소방사", "소방교", "소방장", "소방위", "소방경", "재직기간",
+            "연가", "연가일수", "재직기간별",
+        ],
+        "여행": [
+            "여행", "여행의 제한", "여행의제한", "휴무일", "근무시간 외",
+            "공무가 아닌 사유", "3시간", "직무에 복귀", "직무복귀",
+            "소속 소방기관의 장", "소방기관의 장", "신고", "허가",
+            "비상근무", "소방공무원 복무규정", "제4조",
+        ],
+        "관외": ["관외", "여행", "여행의 제한", "3시간", "직무복귀", "신고", "허가"],
+        "복귀": ["복귀", "직무복귀", "3시간", "여행의 제한", "여행"],
         "초과근무": ["초과근무", "시간외", "수당", "근무명령"],
         "당직": ["당직", "비상근무", "근무명령"],
+        "의용소방대": [
+            "의용소방대", "의용 소방대", "의소대", "의용소방대원",
+            "사직", "사직서", "본인의 원", "해임", "위촉", "임명", "소방서장",
+            "별지", "서식", "의용소방대 설치 및 운영에 관한 조례",
+            "충청남도 의용소방대 설치 및 운영에 관한 조례",
+        ],
     }
 
     expanded = set(base_terms)
@@ -1530,6 +1818,16 @@ def expand_question_terms(question: str) -> list[str]:
 
     joined_question = question.replace(" ", "")
 
+    if "여행의제한" in joined_question:
+        expanded.update(synonym_map["여행"])
+
+    if "연가" in joined_question and any(term in joined_question for term in ["계급", "소방사", "소방교", "소방장", "개수", "일수", "며칠"]):
+        expanded.update(synonym_map["연가"])
+        expanded.update(["계급별", "재직기간별", "연가일수"])
+
+    if any(term in joined_question for term in ["의용소방대", "의용소방대원", "의소대"]):
+        expanded.update(synonym_map["의용소방대"])
+
     for key, values in synonym_map.items():
         key_joined = key.replace(" ", "")
         if key in question or key_joined in joined_question:
@@ -1538,11 +1836,11 @@ def expand_question_terms(question: str) -> list[str]:
 
     return sorted({t.strip().lower() for t in expanded if len(t.strip()) >= 2}, key=len, reverse=True)
 
+
 def split_text_chunks(text: str, chunk_size: int = 1200, overlap: int = 220) -> list[str]:
     """긴 본문을 검색용 문단으로 나눈다.
 
-    단순 글자수 자르기만 하면 조문·문단이 중간에서 끊겨 답변 품질이 낮아질 수 있어
-    우선 문단 기준으로 묶고, 너무 긴 문단만 글자수 기준으로 나눈다.
+    법령·조례 PDF는 조문 제목이 핵심이므로 제1조, 제2조, [별표] 단위로 우선 분리한다.
     """
     text = str(text or "").replace("\x00", " ")
     text = re.sub(r"[ \t]+", " ", text)
@@ -1551,7 +1849,26 @@ def split_text_chunks(text: str, chunk_size: int = 1200, overlap: int = 220) -> 
     if not text:
         return []
 
-    paragraphs = [p.strip() for p in re.split(r"\n{2,}", text) if p.strip()]
+    # 법령 조문/별표 앞에 줄바꿈을 보강한다. PDF 추출 과정에서 조문이 한 줄로 붙는 문제를 줄인다.
+    normalized_for_articles = re.sub(
+        r"(?<!\n)(?=(?:제\s*\d+\s*조(?:의\s*\d+)?\s*(?:\(|（)|\[별표\s*\d*|\[별지\s*제?\s*\d*))",
+        "\n\n",
+        text,
+    )
+    article_parts = [
+        p.strip()
+        for p in re.split(
+            r"\n{2,}(?=(?:제\s*\d+\s*조(?:의\s*\d+)?\s*(?:\(|（)|\[별표\s*\d*|\[별지\s*제?\s*\d*))",
+            normalized_for_articles,
+        )
+        if p.strip()
+    ]
+
+    if len(article_parts) >= 2:
+        paragraphs = article_parts
+    else:
+        paragraphs = [p.strip() for p in re.split(r"\n{2,}", text) if p.strip()]
+
     chunks: list[str] = []
     current = ""
 
@@ -1588,17 +1905,15 @@ def split_text_chunks(text: str, chunk_size: int = 1200, overlap: int = 220) -> 
 
     return chunks
 
+
 def score_chunk(chunk: str, terms: list[str]) -> int:
     """질문과 본문 문단의 관련도를 계산한다."""
     chunk_lower = normalize_search_text(chunk)
     chunk_joined = chunk_lower.replace(" ", "")
+    term_set = {normalize_search_text(term) for term in terms if normalize_search_text(term)}
     score = 0
 
-    for term in terms:
-        term_lower = normalize_search_text(term)
-        if not term_lower:
-            continue
-
+    for term_lower in term_set:
         count = chunk_lower.count(term_lower)
         joined_count = chunk_joined.count(term_lower.replace(" ", ""))
 
@@ -1617,6 +1932,13 @@ def score_chunk(chunk: str, terms: list[str]) -> int:
         "통행료", "주차료", "실비", "지급", "정산",
         "공무상 부득이", "공무상 부득이한 사유",
         "일비", "식비", "숙박비",
+        "연가", "연가일수", "연가 일수", "재직기간", "재직기간별",
+        "여행의 제한", "여행의제한", "휴무일", "근무시간 외",
+        "3시간", "직무에 복귀", "직무복귀", "소방기관의 장", "신고", "허가",
+        "준용", "국가공무원 복무규정", "소방공무원 복무규정",
+        "의용소방대", "의용 소방대", "의소대", "의용소방대원",
+        "사직", "사직서", "본인의 원", "해임", "위촉", "소방서장", "별지", "서식",
+        "의용소방대 설치 및 운영에 관한 조례",
     ]
 
     for term in important_terms:
@@ -1625,87 +1947,185 @@ def score_chunk(chunk: str, terms: list[str]) -> int:
 
     # 질문이 여비·출장 계열일 때 핵심 표현이 같이 있으면 우선순위를 높인다.
     travel_core = ["자가용", "자동차운임", "연료비", "통행료", "주차료", "공용차량", "관용차"]
-    if any(term in terms for term in ["출장", "여비", "유류비", "연료비", "운임", "운임비"]):
+    if any(term in term_set for term in ["출장", "여비", "유류비", "연료비", "운임", "운임비"]):
         for term in travel_core:
             if term in chunk_lower or term.replace(" ", "") in chunk_joined:
                 score += 5
 
+    # 여행의 제한 질문은 제4조/여행의 제한 조문을 강하게 우선한다.
+    # 단, "관외 출장"처럼 여비 질문에 관외라는 단어가 들어간 경우에는 여행 제한 조문으로 끌려가지 않게 한다.
+    is_expense_terms = any(term in term_set for term in ["출장", "여비", "출장비", "운임", "운임비", "유류비", "연료비", "교통비", "자가용"])
+    if not is_expense_terms and any(term in term_set for term in ["여행", "여행의 제한", "여행의제한", "관외", "복귀"]):
+        if "여행의 제한" in chunk_lower or "여행의제한" in chunk_joined:
+            score += 25
+        if "제4조" in chunk_joined and any(term in chunk_joined for term in ["여행", "직무복귀", "3시간"]):
+            score += 15
+
+    # 연가 질문은 계급명이 아니라 재직기간별 연가일수 조문/표를 우선한다.
+    if "연가" in term_set or "연가일수" in term_set or "연가 일수" in term_set:
+        if "재직기간" in chunk_lower or "재직기간별" in chunk_joined:
+            score += 18
+        if "제15조" in chunk_joined and "연가" in chunk_lower:
+            score += 14
+        if "공무원의 재직기간별 연가 일수" in chunk_lower:
+            score += 25
+
+    # 의용소방대 사직 질문은 사직 조문과 사직서 서식을 강하게 우선한다.
+    if any(term in term_set for term in ["의용소방대", "의용 소방대", "의소대", "의용소방대원"]):
+        if "사직" in chunk_lower or "사직서" in chunk_lower:
+            score += 30
+        if "소방서장" in chunk_lower and any(term in chunk_lower for term in ["사직", "해임", "위촉"]):
+            score += 18
+        if any(term in chunk_lower for term in ["별지", "서식"]) and any(term in chunk_lower for term in ["사직", "사직서"]):
+            score += 20
+        if "의용소방대" in chunk_lower or "의용 소방대" in chunk_lower:
+            score += 10
+
+    # 별표·별지는 표 자체가 핵심인 경우가 많다.
+    if any(term in term_set for term in ["별표", "별지", "서식", "일수", "연가일수", "재직기간별"]):
+        if "[별표" in chunk or "별표" in chunk_lower:
+            score += 8
+
     return score
 
-def build_resource_context(question: str, limit: int = 5) -> tuple[str, list[dict[str, Any]]]:
-    """질문과 관련된 공개 자료의 실제 본문 발췌를 구성한다.
+
+def build_resource_context(question: str, limit: int = 8) -> tuple[str, list[dict[str, Any]]]:
+    """질문과 관련된 등록 자료의 실제 본문 발췌를 구성한다.
 
     안전 원칙:
-    - 공개 자료만 사용한다.
-    - 본문 또는 요약에서 질문과 관련된 부분이 검색된 경우에만 Gemini에 전달한다.
-    - 관련 문단이 없으면 임의 자료를 넘기지 않는다.
+    - Public/Private는 자료실 표시 여부이므로 AI 검색 여부와 분리한다.
+    - ai_search_enabled=false, 삭제됨, 사용 금지, 업로드 금지 자료는 제외한다.
+    - PDF에서 추출된 실제 본문 또는 충분한 관리자 요약만 Gemini에 전달한다.
+    - 자료명만 맞는 자료는 근거로 넘기지 않는다.
     """
-    resources = [
-        r for r in load_json("resources", [])
-        if normalize_visibility(r.get("visibility")) == "Public" and not r.get("deleted")
-    ]
+    resources = [r for r in load_json("resources", []) if is_ai_usable_resource(r)]
 
     if not resources:
         return "", []
 
     terms = expand_question_terms(question)
     question_lower = normalize_search_text(question)
+    question_joined = question_lower.replace(" ", "")
+
+    is_volunteer_fire_question = any(term in question_joined for term in ["의용소방대", "의용소방대원", "의소대"])
+    needs_delegation_rule = any(term in question_joined for term in ["전결", "결재권자", "전결처리"])
+    is_expense_question = any(
+        term in question_joined
+        for term in ["출장", "여비", "출장비", "운임", "운임비", "유류비", "연료비", "교통비", "자가용", "자가운전"]
+    )
+    is_leave_question = any(term in question_joined for term in ["연가", "병가", "공가", "특별휴가", "휴가", "진단서", "진료확인서"])
+    is_travel_restriction_question = (
+        not is_expense_question
+        and any(term in question_joined for term in ["여행", "여행의제한", "직무복귀", "근무시간외", "휴무일여행", "3시간복귀"])
+    )
+
     scored_chunks: list[tuple[int, dict[str, Any], str, int]] = []
 
     for r in resources:
-        metadata_text = " ".join([
-            str(r.get("title", "")),
-            str(r.get("category", "")),
-            str(r.get("agency", "")),
-            str(r.get("summary", "")),
-        ]).strip()
-
-        attached_text = read_resource_attached_text(r, max_chars=None)
-        full_text = f"{metadata_text}\n\n{attached_text}".strip()
-
-        if not full_text:
-            continue
-
-        chunks = split_text_chunks(full_text, chunk_size=1200, overlap=220)
         title = normalize_search_text(str(r.get("title", "")))
         title_joined = title.replace(" ", "")
+        category = normalize_search_text(str(r.get("category", "")))
+        agency = normalize_search_text(str(r.get("agency", "")))
+
+        if is_volunteer_fire_question:
+            is_volunteer_resource = any(term in title_joined for term in ["의용소방대", "의용소방대설치및운영"])
+            is_delegation_resource = "사무전결" in title_joined or "전결처리" in title_joined
+            if not is_volunteer_resource and not (needs_delegation_rule and is_delegation_resource):
+                continue
+
+        attached_text = read_resource_attached_text(r, max_chars=None)
+        summary = str(r.get("summary", "")).strip()
+
+        if attached_text:
+            content_text = attached_text
+        elif len(summary) >= 120:
+            content_text = summary
+        else:
+            continue
+
+        chunks = split_text_chunks(content_text, chunk_size=1500, overlap=260)
 
         for idx, chunk in enumerate(chunks, 1):
             score = score_chunk(chunk, terms)
 
-            if title and any(term in title or term.replace(" ", "") in title_joined for term in terms):
-                score += 8
+            if title and (title in question_lower or title_joined in question_joined):
+                score += 35
 
-            if any(term in question_lower for term in ["출장", "유류비", "연료비", "운임", "운임비", "교통비", "여비"]):
-                for bonus_term in [
-                    "여비", "출장", "운임", "자동차운임", "교통비", "유류비", "연료비",
-                    "자가용", "자가운전", "자가용 승용차", "통행료", "주차료",
-                    "공용차량", "관용차", "공무상 부득이",
-                ]:
-                    if bonus_term in chunk or bonus_term.replace(" ", "") in chunk.replace(" ", ""):
-                        score += 4
+            for term in terms:
+                term_norm = normalize_search_text(term)
+                term_joined = term_norm.replace(" ", "")
+                if term_norm and (term_norm in title or term_joined in title_joined):
+                    score += 7
+
+            if is_leave_question and any(t in title for t in ["복무", "휴가", "국가공무원 복무규정", "소방공무원 복무규정"]):
+                score += 9
+            if is_travel_restriction_question and "복무" in title:
+                score += 10
+            if is_expense_question and any(t in title for t in ["여비", "출장", "보수", "회계관리"]):
+                score += 14
+            if is_volunteer_fire_question and "의용소방대" in title_joined:
+                score += 20
+            if is_volunteer_fire_question and any(t in question_joined for t in ["사직", "사직서", "해임"]) and any(t in title_joined for t in ["시행규칙", "별지", "서식"]):
+                score += 10
+
+            if category:
+                for term in terms:
+                    term_norm = normalize_search_text(term)
+                    if term_norm and term_norm in category:
+                        score += 2
+
+            if agency and "소방청" in agency and "소방" in question_joined:
+                score += 2
 
             if score > 0:
                 scored_chunks.append((score, r, chunk, idx))
+
+    if not scored_chunks:
+        return "", []
+
+    def chunk_has_any(chunk: str, core_terms: list[str]) -> bool:
+        lower = normalize_search_text(chunk)
+        joined = lower.replace(" ", "")
+        return any(term in lower or term.replace(" ", "") in joined for term in core_terms)
+
+    domain_core_terms: list[str] = []
+    if is_volunteer_fire_question:
+        domain_core_terms = ["의용소방대", "의용 소방대", "의소대", "의용소방대원", "사직", "사직서", "해임", "위촉", "소방서장", "별지", "서식"]
+    elif is_expense_question:
+        domain_core_terms = ["여비", "출장", "운임", "자동차운임", "철도운임", "버스운임", "유류비", "연료비", "자가용", "통행료", "주차료", "공무상 부득이"]
+    elif "연가" in question_joined:
+        domain_core_terms = ["연가", "연가일수", "연가 일수", "재직기간", "재직기간별"]
+    elif any(t in question_joined for t in ["병가", "진단서", "진료확인서", "질병"]):
+        domain_core_terms = ["병가", "질병", "부상", "진단서", "진료확인서", "의사의 진단서", "증명서"]
+    elif is_travel_restriction_question:
+        domain_core_terms = ["여행의 제한", "여행", "3시간", "직무에 복귀", "직무복귀", "신고", "허가"]
+
+    if domain_core_terms:
+        domain_matched = [item for item in scored_chunks if chunk_has_any(item[2], domain_core_terms)]
+        if domain_matched:
+            scored_chunks = domain_matched
 
     scored_chunks.sort(key=lambda x: x[0], reverse=True)
 
     selected_chunks: list[tuple[int, dict[str, Any], str, int]] = []
     per_resource_count: dict[str, int] = {}
+    min_score = 7
 
-    # 한 자료가 검색 결과를 과도하게 독점하지 않도록 하되, 높은 점수 문단은 우선 반영한다.
     for item in scored_chunks:
         score, r, chunk, idx = item
+        if score < min_score:
+            continue
+
         resource_id = str(r.get("id") or r.get("title", ""))
         current_count = per_resource_count.get(resource_id, 0)
 
-        if current_count >= 3 and len(selected_chunks) >= limit:
+        if current_count >= 3:
             continue
 
         selected_chunks.append(item)
         per_resource_count[resource_id] = current_count + 1
 
-        if len(selected_chunks) >= 10:
+        if len(selected_chunks) >= max(limit, 10):
             break
 
     if not selected_chunks:
@@ -1722,11 +2142,14 @@ def build_resource_context(question: str, limit: int = 5) -> tuple[str, list[dic
             selected_resources.append(r)
             seen_resource_ids.add(resource_id)
 
+        visibility_label = VISIBILITY_LABELS.get(normalize_visibility(r.get("visibility")), "비공개")
+
         blocks.append(
             f"[관련 근거 {idx}]\n"
             f"자료명: {r.get('title', '')}\n"
             f"관련 근거: {r.get('category', '')}\n"
             f"발행기관: {r.get('agency', '')}\n"
+            f"공개범위: {visibility_label}\n"
             f"공식 출처 URL: {r.get('source_url', '')}\n"
             f"최종 확인일: {r.get('checked_at', '')}\n"
             f"검색점수: {score}\n"
@@ -1736,15 +2159,60 @@ def build_resource_context(question: str, limit: int = 5) -> tuple[str, list[dic
 
     return "\n\n".join(blocks), selected_resources
 
+
+
+def get_gemini_api_key() -> tuple[str, str]:
+    """Gemini API 키를 안전하게 읽고 기본 오류를 검증한다."""
+    if genai is None:
+        return "", "google-genai 패키지를 불러오지 못했습니다."
+
+    try:
+        raw_key = st.secrets.get("GEMINI_API_KEY", "")
+    except Exception:
+        raw_key = ""
+
+    key = str(raw_key or "").strip()
+
+    if not key:
+        return "", "GEMINI_API_KEY가 설정되어 있지 않습니다."
+
+    try:
+        key.encode("ascii")
+    except UnicodeEncodeError:
+        return "", "GEMINI_API_KEY에 한글 또는 비 ASCII 문자가 포함되어 있습니다."
+
+    invalid_words = ["여기에", "입력", "키", "발급", "예시", "YOUR_", "PASTE_"]
+    if any(word.lower() in key.lower() for word in invalid_words):
+        return "", "GEMINI_API_KEY가 실제 키가 아닌 안내 문구로 보입니다."
+
+    if len(key) < 25:
+        return "", "GEMINI_API_KEY 길이가 너무 짧습니다."
+
+    return key, ""
+
+
+def remove_duplicate_disclaimer(answer: str) -> str:
+    """Gemini가 면책문구를 직접 쓴 경우 앱에서 붙이는 면책문구와 중복되지 않게 정리한다."""
+    cleaned = str(answer or "").strip()
+    if not cleaned:
+        return ""
+
+    cleaned = cleaned.replace(AI_DISCLAIMER, "").strip()
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+    cleaned = re.sub(r"(?:---\s*)+$", "", cleaned).strip()
+    return cleaned
+
+
+
 def generate_ai_answer(category: str, question: str) -> str:
-    """등록된 공개 자료 기반 Gemini 답변 생성기."""
+    """등록 자료 기반 Gemini 답변 생성기."""
     trimmed = question.strip()
     context, matched_resources = build_resource_context(trimmed)
 
     if not context.strip():
         return (
-            "등록된 공개 자료에서 질문과 직접 관련된 본문 근거를 찾을 수 없습니다.\n\n"
-            "이 사이트에 등록된 공개 자료만으로는 해당 질문에 답변할 수 없습니다. "
+            "등록된 자료에서 질문과 직접 관련된 본문 근거를 찾을 수 없습니다.\n\n"
+            "이 사이트에 등록된 자료만으로는 해당 질문에 답변하기 어렵습니다. "
             "담당 부서 또는 공식 자료를 통해 확인하십시오.\n\n"
             f"---\n{AI_DISCLAIMER}"
         )
@@ -1764,14 +2232,19 @@ def generate_ai_answer(category: str, question: str) -> str:
 
 반드시 지켜야 할 원칙:
 1. 아래 '등록 자료 본문 발췌'에 실제로 적힌 내용만 근거로 답변한다.
-2. 자료명, 발행기관, 제목만 보고 세부 내용을 추정하지 않는다.
-3. 등록 자료 본문 발췌에 없는 조문 번호, 지급 기준, 절차, 금액, 날짜, 기관 지침은 절대 지어내지 않는다.
-4. 질문과 관련된 내용이 일부만 확인되면 '등록 자료 기준으로 확인되는 범위'와 '추가 확인이 필요한 사항'을 구분한다.
-5. 법적 판단, 징계 판단, 감사 판단, 인사 판단, 지급 확정 여부를 단정하지 않는다.
-6. 개인정보·민감정보·보안자료 입력을 요구하지 않는다.
-7. 최종 업무처리는 담당 부서와 공식 자료로 확인하라고 안내한다.
-8. 답변은 다음 형식을 따른다.
+2. Public/Private는 자료실 표시 여부일 뿐이며, 전달된 본문 발췌는 관리자가 AI 검색 사용을 허용한 등록 자료로 본다.
+3. 자료명, 발행기관, 제목만 보고 세부 내용을 추정하지 않는다.
+4. 등록 자료 본문 발췌에 없는 조문 번호, 지급 기준, 절차, 금액, 날짜, 기관 지침은 절대 지어내지 않는다.
+5. 질문과 관련된 내용이 일부만 확인되면 '등록 자료 기준으로 확인되는 범위'와 '추가 확인이 필요한 사항'을 구분한다.
+6. 법적 판단, 징계 판단, 감사 판단, 인사 판단, 지급 확정 여부를 단정하지 않는다.
+7. 개인정보·민감정보·보안자료 입력을 요구하지 않는다.
+8. 최종 업무처리는 담당 부서와 공식 자료로 확인하라고 안내한다.
+9. 사용자가 "계급별 연가", "소방사 연가"처럼 물어도 본문 근거가 재직기간별 기준이면 "계급별이 아니라 재직기간별 기준"이라고 정정해서 설명한다.
+10. "관외 출장"은 여행의 제한 질문이 아니라 출장·여비 질문으로 우선 이해한다. 단, 사용자가 명시적으로 여행의 제한을 묻는 경우에는 복무규정을 확인한다.
+11. 답변 하단의 최종 면책문구는 앱이 자동으로 붙이므로 직접 반복해서 쓰지 않는다.
+12. 답변은 가능한 한 짧고 실무자가 바로 이해할 수 있게 쓴다.
 
+답변 형식:
 1. 핵심 결론
 2. 등록 자료 기준 근거
 3. 실제 처리 방법
@@ -1782,9 +2255,11 @@ def generate_ai_answer(category: str, question: str) -> str:
 질문 분야: {category}
 """
 
-    if genai is None or "GEMINI_API_KEY" not in st.secrets:
+    api_key, key_error = get_gemini_api_key()
+    if key_error:
         return (
-            "Gemini API 설정을 확인할 수 없어 AI 답변을 생성하지 못했습니다.\n\n"
+            "Gemini API 설정 문제로 AI 답변을 생성하지 못했습니다.\n\n"
+            f"관리자 확인사항: {key_error}\n\n"
             "다만 질문과 관련되어 검색된 등록 자료는 다음과 같습니다.\n"
             f"{source_text}\n\n"
             "업무 적용 전 담당 부서와 공식 자료로 최종 확인하십시오.\n\n"
@@ -1792,19 +2267,21 @@ def generate_ai_answer(category: str, question: str) -> str:
         )
 
     try:
-        client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
+        client = genai.Client(api_key=api_key)
         response = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=(
                 f"{system_prompt}\n\n"
                 f"[등록 자료 본문 발췌]\n{context}\n\n"
                 f"[사용자 질문]\n{trimmed}\n\n"
-                f"위 본문 발췌에 없는 내용은 '등록된 자료만으로는 확인할 수 없습니다'라고 답변하십시오."
+                f"위 본문 발췌에 근거가 있는 내용만 답변하십시오. "
+                f"근거가 일부만 있으면 확인되는 범위와 추가 확인사항을 구분하십시오. "
+                f"본문 발췌에 없는 내용은 '등록된 자료만으로는 확인할 수 없습니다'라고 답변하십시오."
             ),
         )
 
         answer = getattr(response, "text", "") or ""
-        answer = answer.strip()
+        answer = remove_duplicate_disclaimer(answer)
 
         if not answer:
             raise RuntimeError("Gemini 응답이 비어 있습니다.")
@@ -1812,9 +2289,27 @@ def generate_ai_answer(category: str, question: str) -> str:
         return f"{answer}\n\n근거로 사용한 등록 자료:\n{source_text}\n\n---\n{AI_DISCLAIMER}"
 
     except Exception as e:
+        error_text = str(e)
+        if (
+            "429" in error_text
+            or "RESOURCE_EXHAUSTED" in error_text
+            or "Quota exceeded" in error_text
+            or "quota" in error_text.lower()
+            or "rate" in error_text.lower()
+        ):
+            return (
+                "현재 AI 응답 생성 사용량이 일시적으로 초과되었습니다.\n\n"
+                "잠시 후 다시 질문해 주십시오.\n\n"
+                "질문과 관련되어 검색된 등록 자료는 다음과 같습니다.\n"
+                f"{source_text}\n\n"
+                "업무 적용 전 담당 부서와 공식 자료로 최종 확인하십시오.\n\n"
+                f"---\n{AI_DISCLAIMER}"
+            )
+
+        add_audit("system", "GEMINI_ERROR", "generate_ai_answer", error_text[:180])
         return (
-            "Gemini 호출 중 오류가 발생했습니다.\n\n"
-            f"오류 내용: {e}\n\n"
+            "현재 AI 응답 생성 중 일시적인 오류가 발생했습니다.\n\n"
+            "잠시 후 다시 질문해 주십시오.\n\n"
             "질문과 관련되어 검색된 등록 자료는 다음과 같습니다.\n"
             f"{source_text}\n\n"
             "업무 적용 전 담당 부서와 공식 자료로 최종 확인하십시오.\n\n"
@@ -1964,7 +2459,7 @@ def resources_page() -> None:
         "공개되지 않는 자료가 있다고 해서 자료가 존재하지 않는다는 의미는 아니며, 공개 가능 여부가 확인되지 않은 자료는 사용자에게 제공하지 않습니다.\n"
         "정확한 내용은 반드시 소속 기관 담당 부서, 공식 법령·조례·예규·공문, 업무 담당자에게 최종 확인하십시오.",
     )
-    resources = [r for r in load_json("resources", []) if normalize_visibility(r.get("visibility")) in VISIBLE_TO_USER]
+    resources = [r for r in load_json("resources", []) if is_user_visible_resource(r)]
     col1, col2 = st.columns([2, 1])
     with col1:
         keyword = st.text_input("자료 검색", placeholder="자료명, 발행기관, 관련 근거, 키워드")
@@ -2019,24 +2514,23 @@ def resource_request_page() -> None:
         reason = st.text_area("요청 사유", max_chars=500)
         submitted = st.form_submit_button("자료 등록 요청", type="primary", use_container_width=True)
     if submitted:
-        if not title.strip() or not agency.strip():
-            st.error("자료명, 발행기관은 필수입니다.")
-        elif visibility == "Public" and not source_url.strip():
-            st.error("공개 자료는 공식 출처 URL을 입력해야 합니다.")
-        elif source_url.strip() and not is_valid_url(source_url.strip()):
+        if not title.strip() or not agency.strip() or not source_url.strip() or not reason.strip():
+            st.error("자료명, 발행기관, 공식 출처 URL, 등록 요청 사유는 필수입니다.")
+        elif not is_valid_url(source_url.strip()):
             st.error("공식 출처 URL 형식이 올바르지 않습니다.")
         else:
+            combined_request_text = "\n".join([title, agency, source_url, reason])
+            blocked, reasons = detect_sensitive_text(combined_request_text)
+            if blocked:
+                st.error("자료 등록 요청에 개인정보·민감정보·보안자료로 의심되는 내용이 포함되어 접수할 수 없습니다.")
+                st.caption("차단 사유: " + ", ".join(reasons))
+                return
             requests = load_json("resource_requests", [])
             record = {
                 "id": uid("req"),
                 "user_id": user["user_id"],
                 "request_type": "등록",
                 "title": title.strip(),
-                "category": category,
-                "agency": agency.strip(),
-                "visibility": visibility,
-                "source_url": source_url.strip(),
-                "reason": reason.strip(),
                 "category": category,
                 "agency": agency.strip(),
                 "source_url": source_url.strip(),
@@ -2052,7 +2546,7 @@ def resource_request_page() -> None:
             add_audit(user["user_id"], "RESOURCE_REQUEST_CREATE", record["id"], title.strip())
             st.success("자료 등록 요청이 접수되었습니다. 관리자는 공개 가능 여부만 제한적으로 확인합니다.")
     st.markdown("### 자료 삭제 요청")
-    public_resources = [r for r in load_json("resources", []) if normalize_visibility(r.get("visibility")) == "Public"]
+    public_resources = [r for r in load_json("resources", []) if is_user_visible_resource(r)]
     if public_resources:
         resource_options = {f"{r.get('title', '')} · {r.get('agency', '')} · {r.get('id', '')}": r for r in public_resources}
         with st.form("resource_delete_request_form"):
@@ -2064,6 +2558,11 @@ def resource_request_page() -> None:
             if not delete_reason.strip():
                 st.error("삭제 요청 사유를 입력하십시오.")
             else:
+                blocked, reasons = detect_sensitive_text(delete_reason)
+                if blocked:
+                    st.error("삭제 요청 사유에 개인정보·민감정보·보안자료로 의심되는 내용이 포함되어 접수할 수 없습니다.")
+                    st.caption("차단 사유: " + ", ".join(reasons))
+                    return
                 requests = load_json("resource_requests", [])
                 record = {
                     "id": uid("req"),
@@ -2291,6 +2790,7 @@ def admin_resource_register() -> None:
                     "source_url": source_url.strip(),
                     "summary": summary.strip(),
                     "visibility": visibility,
+                    "ai_search_enabled": True,
                     "non_public_reason": non_public_reason,
                     "created_at": now_iso(),
                     "checked_at": checked_at.strftime("%Y-%m-%d"),
@@ -2338,11 +2838,21 @@ def admin_resource_manage() -> None:
             continue
         item = dict(r)
         item["visibility_label"] = "공개" if is_public else "비공개"
+        text_status = str(item.get("attached_file_text_status", "") or "")
+        text_length = int(item.get("attached_file_text_length", 0) or 0)
+        chunk_count = int(item.get("attached_file_text_chunk_count", 0) or 0)
+        if is_text_extracted_status(text_status) and text_length > 0:
+            item["text_status_label"] = f"성공 / {text_length:,}자 / {chunk_count:,}개"
+        elif item.get("attached_file_name"):
+            item["text_status_label"] = "실패 또는 스캔본"
+        else:
+            item["text_status_label"] = "PDF 없음"
+        item["ai_search_label"] = "가능" if is_ai_usable_resource(item) else f"제외: {ai_unusable_reason(item)}"
         filtered.append(item)
     if filtered:
         table = pd.DataFrame(filtered)[
-            ["created_at", "title", "category", "agency", "visibility_label", "checked_at", "created_by", "id"]
-        ].rename(columns={"category": "관련근거", "visibility_label": "공개상태"})
+            ["created_at", "title", "category", "agency", "visibility_label", "ai_search_label", "text_status_label", "checked_at", "created_by", "id"]
+        ].rename(columns={"category": "관련근거", "visibility_label": "공개상태", "ai_search_label": "AI 검색", "text_status_label": "본문 추출 상태"})
         st.dataframe(table.sort_values("created_at", ascending=False), use_container_width=True, hide_index=True)
     else:
         st.info("자료가 없습니다.")
@@ -2352,6 +2862,14 @@ def admin_resource_manage() -> None:
             st.write("공식 출처:", r.get("source_url"))
             st.write("요약:", r.get("summary"))
             st.write("비공개 사유:", r.get("non_public_reason", ""))
+            st.caption(
+                "본문 추출 상태: "
+                f"{r.get('text_status_label', '미확인')} / "
+                f"첨부파일: {r.get('attached_file_name', '없음')}"
+            )
+            st.caption(f"AI 검색 사용: {r.get('ai_search_label', '미확인')}")
+            if r.get("attached_file_name") and not is_text_extracted_status(r.get("attached_file_text_status")):
+                st.warning("PDF 본문 추출이 실패했거나 스캔본일 수 있습니다. 이 자료는 AI 답변 근거로 제대로 사용되지 않을 수 있습니다.")
             new_label = st.selectbox(
                 "공개범위 변경",
                 ["비공개", "공개"],
@@ -2372,6 +2890,26 @@ def admin_resource_manage() -> None:
                 save_json("resources", all_resources)
                 add_audit(admin["user_id"], "RESOURCE_VISIBILITY_CHANGE", r["id"], f"{old} -> {new_visibility} / {reason}")
                 st.success("공개범위가 변경되었습니다.")
+                st.rerun()
+
+            current_ai_enabled = bool(r.get("ai_search_enabled", True))
+            new_ai_enabled = st.checkbox(
+                "AI 답변 검색에 사용",
+                value=current_ai_enabled,
+                key=f"ai_search_enabled_{r['id']}",
+                help="비공개 자료라도 이 항목이 켜져 있고 본문이 추출되어 있으면 AI 답변 근거로 사용됩니다.",
+            )
+            if st.button("AI 검색 설정 저장", key=f"save_ai_search_{r['id']}"):
+                all_resources = load_json("resources", [])
+                for item in all_resources:
+                    if item.get("id") == r.get("id"):
+                        old_value = item.get("ai_search_enabled", True)
+                        item["ai_search_enabled"] = bool(new_ai_enabled)
+                        item["updated_at"] = now_iso()
+                        add_audit(admin["user_id"], "RESOURCE_AI_SEARCH_CHANGE", r["id"], f"{old_value} -> {new_ai_enabled}")
+                        break
+                save_json("resources", all_resources)
+                st.success("AI 검색 설정이 저장되었습니다.")
                 st.rerun()
             st.divider()
             st.markdown("#### 자료 삭제")
@@ -2724,7 +3262,7 @@ def admin_ai_settings() -> None:
     box(
         "info",
         "AI 답변 기준",
-        "AI는 사이트에 등록된 공개 자료를 바탕으로만 답변하도록 설정되어 있습니다. "
+        "AI는 사이트에 등록된 자료 중 AI 검색 사용이 허용된 자료를 바탕으로만 답변하도록 설정되어 있습니다. "
         "아래 지침은 Gemini 호출 시 함께 전달됩니다. 추측 답변을 허용하는 문구는 입력하지 마십시오.",
     )
     settings = load_json("ai_settings", {})
