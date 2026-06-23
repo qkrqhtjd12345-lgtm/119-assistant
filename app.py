@@ -1015,6 +1015,29 @@ def inject_css() -> None:
     st.markdown(
         """
         <style>
+        html, body, .stApp {
+    color: #111827 !important;
+    -webkit-text-fill-color: #111827 !important;
+}
+
+input, textarea, select {
+    background-color: #FFFFFF !important;
+    color: #111827 !important;
+    -webkit-text-fill-color: #111827 !important;
+}
+
+input::placeholder,
+textarea::placeholder {
+    color: #6B7280 !important;
+    -webkit-text-fill-color: #6B7280 !important;
+    opacity: 1 !important;
+}
+.stTextInput input,
+.stTextArea textarea {
+    color: #111827 !important;
+    -webkit-text-fill-color: #111827 !important;
+    background-color: #FFFFFF !important;
+}
         :root {
             --main-navy: #1F2F3F;
             --deep-navy: #172635;
