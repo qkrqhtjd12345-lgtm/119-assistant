@@ -23,6 +23,7 @@ import json
 import os
 import re
 import secrets
+import shutil
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -39,8 +40,9 @@ try:
     from pypdf import PdfReader
 except Exception:
     PdfReader = None
-APP_NAME = "충남119행정비서"
-APP_VERSION = "v1.0.13 MVP"
+APP_NAME = "충남119 A ss I st"
+APP_SUBTITLE = "소방 행정 AI 지원 플랫폼"
+APP_VERSION = "v1.0.14 MVP"
 DATA_DIR = Path(__file__).parent / "data"
 UPLOAD_DIR = DATA_DIR / "uploads"
 SESSION_TIMEOUT_SECONDS = 10 * 60
@@ -91,21 +93,57 @@ def _build_favicon():
 PAGE_ICON = _build_favicon()
 
 
-VISIBILITY_LABELS = {
-    "Private": "비공개",
-    "Public": "공개",
+VISIBILITY_OPTIONS = ["전체 공개", "로그인 사용자", "관리자 전용", "화면 미표시"]
+VISIBILITY_CODE_TO_LABEL = {
+    "Public": "전체 공개",
+    "Login": "로그인 사용자",
+    "AdminOnly": "관리자 전용",
+    "Hidden": "화면 미표시",
 }
-VISIBLE_TO_USER = {"Public"}
+VISIBILITY_LABEL_TO_CODE = {label: code for code, label in VISIBILITY_CODE_TO_LABEL.items()}
+VISIBILITY_LABELS = VISIBILITY_CODE_TO_LABEL
+VISIBLE_TO_USER = {"Public", "Login"}
+AI_SEARCH_OPTIONS = ["AI 검색 포함", "AI 검색 제외"]
+RESOURCE_STATUS_OPTIONS = ["유효", "검토 필요", "오래됨", "사용 금지", "삭제됨"]
+REQUEST_STATUS_OPTIONS = ["접수 완료", "관리자 검토 중", "승인 완료", "반려", "보류", "등록금지"]
+AI_REFLECT_STATUS_OPTIONS = ["AI 미반영", "AI 반영 중", "AI 반영 완료", "AI 반영 실패", "해당 없음"]
+DAILY_QUESTION_LIMITS = {"admin": 300, "user": 10}
 
 
 def normalize_visibility(value: str | None) -> str:
-    return "Public" if value == "Public" else "Private"
+    raw = str(value or "").strip()
+    mapping = {
+        "Public": "Public",
+        "공개": "Public",
+        "전체 공개": "Public",
+        "Login": "Login",
+        "로그인 사용자": "Login",
+        "User": "Login",
+        "Users": "Login",
+        "Private": "Hidden",
+        "비공개": "Hidden",
+        "Hidden": "Hidden",
+        "화면 미표시": "Hidden",
+        "AdminOnly": "AdminOnly",
+        "Admin": "AdminOnly",
+        "관리자 전용": "AdminOnly",
+    }
+    return mapping.get(raw, "Hidden")
+
+
+def visibility_label(value: str | None) -> str:
+    return VISIBILITY_CODE_TO_LABEL.get(normalize_visibility(value), "화면 미표시")
+
+
+def visibility_code(label: str | None) -> str:
+    return VISIBILITY_LABEL_TO_CODE.get(str(label or "").strip(), normalize_visibility(label))
 
 
 def is_user_visible_resource(resource: dict[str, Any]) -> bool:
     """일반 사용자 자료실에 표시할 자료인지 판단한다.
 
-    공개범위는 '자료실 표시 여부'만 의미한다. AI 검색 사용 여부와 분리한다.
+    자료 노출 범위는 원문 또는 카드가 화면에 보이는지만 의미한다.
+    AI 검색 여부는 ai_search_enabled 필드로 별도 판단한다.
     """
     return normalize_visibility(resource.get("visibility")) in VISIBLE_TO_USER and not resource.get("deleted")
 
@@ -119,7 +157,7 @@ def is_ai_usable_resource(resource: dict[str, Any]) -> bool:
     """AI 답변 근거로 사용할 수 있는 등록 자료인지 판단한다.
 
     원칙:
-    - Public/Private는 자료실 노출 여부일 뿐이다.
+    - 자료 노출 범위는 자료실 표시 여부일 뿐이다.
     - 등록되어 있고 본문이 추출된 자료는 AI 검색에 사용할 수 있다.
     - 단, 삭제됨·사용 금지·업로드 금지·ai_search_enabled=false 자료는 제외한다.
     """
@@ -129,7 +167,7 @@ def is_ai_usable_resource(resource: dict[str, Any]) -> bool:
     if resource.get("ai_search_enabled") is False:
         return False
 
-    status = str(resource.get("status", "") or "").strip()
+    status = str(resource.get("status", "유효") or "유효").strip()
     if status in ["삭제됨", "사용 금지", "업로드 금지", "AI 검색 제외"]:
         return False
 
@@ -156,7 +194,7 @@ def ai_unusable_reason(resource: dict[str, Any]) -> str:
         return "삭제됨"
     if resource.get("ai_search_enabled") is False:
         return "AI 검색 제외"
-    status = str(resource.get("status", "") or "").strip()
+    status = str(resource.get("status", "유효") or "유효").strip()
     if status in ["삭제됨", "사용 금지", "업로드 금지", "AI 검색 제외"]:
         return status
 
@@ -350,6 +388,81 @@ def current_user() -> dict[str, Any] | None:
 def require_admin() -> bool:
     user = current_user()
     return bool(user and user.get("role") == "admin" and user.get("is_active", True))
+
+
+def role_label(user: dict[str, Any] | None) -> str:
+    if user and user.get("role") == "admin":
+        return "관리자"
+    return "일반 사용자"
+
+
+def daily_question_limit(user: dict[str, Any]) -> int:
+    role = "admin" if user.get("role") == "admin" else "user"
+    return DAILY_QUESTION_LIMITS.get(role, 10)
+
+
+def today_question_count(user: dict[str, Any]) -> int:
+    questions = load_json("questions", [])
+    today = today_str()
+    user_id = user.get("user_id")
+    return sum(
+        1
+        for q in questions
+        if q.get("user_id") == user_id
+        and q.get("created_at", "").startswith(today)
+        and not q.get("deleted")
+        and not q.get("blocked")
+        and q.get("status") == "정상"
+    )
+
+
+def question_usage(user: dict[str, Any]) -> tuple[int, int, int, float]:
+    limit = daily_question_limit(user)
+    used = today_question_count(user)
+    remaining = max(limit - used, 0)
+    ratio = min(used / limit, 1.0) if limit else 1.0
+    return used, limit, remaining, ratio
+
+
+def request_status_label(value: Any) -> str:
+    raw = str(value or "").strip()
+    mapping = {
+        "대기": "접수 완료",
+        "승인": "승인 완료",
+        "승인 완료": "승인 완료",
+        "반려": "반려",
+        "등록금지": "등록금지",
+        "보류": "보류",
+        "관리자 검토 중": "관리자 검토 중",
+        "접수 완료": "접수 완료",
+    }
+    return mapping.get(raw, raw or "접수 완료")
+
+
+def request_progress_label(req: dict[str, Any]) -> str:
+    if req.get("processing_stage"):
+        return str(req.get("processing_stage"))
+    status = request_status_label(req.get("status"))
+    if status == "접수 완료":
+        return "관리자 검토 중"
+    if status == "승인 완료":
+        return "관리자 처리 완료"
+    if status == "반려":
+        return "반려 처리 완료"
+    if status == "보류":
+        return "보류"
+    return status
+
+
+def request_ai_status_label(req: dict[str, Any]) -> str:
+    if req.get("ai_reflect_status"):
+        return str(req.get("ai_reflect_status"))
+    status = request_status_label(req.get("status"))
+    if req.get("request_type", "등록") == "삭제":
+        return "해당 없음"
+    if status == "승인 완료":
+        return "AI 반영 완료" if req.get("approved_resource_id") else "AI 미반영"
+    return "AI 미반영"
 
 
 # -----------------------------------------------------------------------------
@@ -898,8 +1011,8 @@ def normalize_existing_data() -> None:
         new_visibility = normalize_visibility(old_visibility)
         if old_visibility != new_visibility:
             resource["visibility"] = new_visibility
-            if new_visibility == "Private" and not resource.get("non_public_reason"):
-                resource["non_public_reason"] = "기존 공개범위 값을 비공개로 정리"
+            if new_visibility in ["Hidden", "AdminOnly"] and not resource.get("non_public_reason"):
+                resource["non_public_reason"] = "기존 공개범위 값을 화면 미표시로 정리"
             changed = True
 
         old_category = resource.get("category")
@@ -908,11 +1021,14 @@ def normalize_existing_data() -> None:
             resource["category"] = new_category
             changed = True
 
+        if not resource.get("status") or resource.get("status") not in RESOURCE_STATUS_OPTIONS:
+            resource["status"] = "유효"
+            changed = True
+
         text_path = str(resource.get("attached_file_text_path", "") or "").strip()
         text_length = int(resource.get("attached_file_text_length", 0) or 0)
         text_status = str(resource.get("attached_file_text_status", "") or "").strip()
 
-        # 과거 버전에서 저장된 한글 상태값을 새 코드 기준으로 통일한다.
         if text_status in ["본문 추출 완료", "추출 완료", "성공"] and text_path and text_length > 0:
             resource["attached_file_text_status"] = "extracted"
             changed = True
@@ -920,8 +1036,6 @@ def normalize_existing_data() -> None:
             resource["attached_file_text_status"] = "empty_or_scan_pdf"
             changed = True
 
-        # 등록된 자료는 기본적으로 AI 검색 사용 대상으로 둔다.
-        # 관리자가 명시적으로 false로 바꾼 경우에는 유지한다.
         if "ai_search_enabled" not in resource and (text_path or str(resource.get("attached_file_text", "")).strip()):
             resource["ai_search_enabled"] = True
             changed = True
@@ -948,9 +1062,18 @@ def normalize_existing_data() -> None:
         if old_category != new_category:
             req["category"] = new_category
             req_changed = True
+        new_status = request_status_label(req.get("status"))
+        if req.get("status") != new_status:
+            req["status"] = new_status
+            req_changed = True
+        if not req.get("processing_stage"):
+            req["processing_stage"] = request_progress_label(req)
+            req_changed = True
+        if not req.get("ai_reflect_status"):
+            req["ai_reflect_status"] = request_ai_status_label(req)
+            req_changed = True
     if req_changed:
         save_json("resource_requests", requests)
-
 
 
 def month_key_from_iso(value: str) -> str:
@@ -980,64 +1103,91 @@ def monthly_count_df(records: list[dict[str, Any]], date_field: str, label: str,
 
 
 def sidebar_stats_html(user: dict[str, Any]) -> str:
-    """왼쪽 사이드바 요약 통계 HTML. 권한요청 수는 표시하지 않는다."""
+    """왼쪽 사이드바 사용량·자료 처리 요약 HTML."""
     resource_requests = load_json("resource_requests", [])
-    questions = load_json("questions", [])
-    today = today_str()
+    used, limit, remaining, ratio = question_usage(user)
+    percent = int(ratio * 100)
+    if percent >= 100:
+        bar_color = "#B42318"
+        usage_note = "일일 질문 한도에 도달했습니다."
+    elif percent >= 80:
+        bar_color = "#F97316"
+        usage_note = "질문 한도 80% 이상 사용했습니다."
+    else:
+        bar_color = "#84CAFF"
+        usage_note = "매일 00:00 초기화"
+
     if user.get("role") == "admin":
-        items = [
-            ("누적질문", len(questions)),
-            ("오늘질문", sum(1 for q in questions if q.get("created_at", "").startswith(today))),
-            ("자료대기", sum(1 for r in resource_requests if r.get("status") == "대기")),
-            ("자료승인", sum(1 for r in resource_requests if r.get("status") == "승인")),
-        ]
+        waiting = sum(1 for r in resource_requests if request_status_label(r.get("status")) in ["접수 완료", "관리자 검토 중", "보류"])
+        approved = sum(1 for r in resource_requests if request_status_label(r.get("status")) == "승인 완료")
     else:
         user_id = user.get("user_id")
-        my_questions = [q for q in questions if q.get("user_id") == user_id]
         my_resource = [r for r in resource_requests if r.get("user_id") == user_id]
-        items = [
-            ("내 질문", len(my_questions)),
-            ("오늘질문", sum(1 for q in my_questions if q.get("created_at", "").startswith(today))),
-            ("자료요청", len(my_resource)),
-            ("자료승인", sum(1 for r in my_resource if r.get("status") == "승인")),
-        ]
+        waiting = sum(1 for r in my_resource if request_status_label(r.get("status")) in ["접수 완료", "관리자 검토 중", "보류"])
+        approved = sum(1 for r in my_resource if request_status_label(r.get("status")) == "승인 완료")
+
+    items = [
+        (f"{used} / {limit}", "사용량"),
+        (remaining, "남은질문"),
+        (waiting, "자료대기"),
+        (approved, "자료승인"),
+    ]
     cards = "".join(
         f"<div class='sidebar-mini-card'><div class='sidebar-mini-num'>{value}</div><div class='sidebar-mini-label'>{esc(label)}</div></div>"
-        for label, value in items
+        for value, label in items
     )
-    return f"<div class='sidebar-mini-grid'>{cards}</div>"
+    progress = f"""
+    <div style='margin: -2px 0 18px 0;'>
+        <div style='height:12px;background:rgba(255,255,255,0.18);border-radius:999px;overflow:hidden;border:1px solid rgba(255,255,255,0.16);'>
+            <div style='height:100%;width:{percent}%;background:{bar_color};border-radius:999px;'></div>
+        </div>
+        <div style='font-size:14px;font-weight:800;opacity:.92;margin-top:8px;'>사용량: {used} / {limit} · 남은질문: {remaining}<br>{usage_note}</div>
+    </div>
+    """
+    return f"<div class='sidebar-mini-grid'>{cards}</div>{progress}"
 
 
-# -----------------------------------------------------------------------------
-# 스타일
-# -----------------------------------------------------------------------------
 def inject_css() -> None:
     st.markdown(
         """
         <style>
-        html, body, .stApp {
-    color: #111827 !important;
-    -webkit-text-fill-color: #111827 !important;
-}
+        input, textarea, select {
+            background-color: #FFFFFF !important;
+            color: #111827 !important;
+            -webkit-text-fill-color: #111827 !important;
+        }
 
-input, textarea, select {
-    background-color: #FFFFFF !important;
-    color: #111827 !important;
-    -webkit-text-fill-color: #111827 !important;
-}
+        input::placeholder,
+        textarea::placeholder {
+            color: #6B7280 !important;
+            -webkit-text-fill-color: #6B7280 !important;
+            opacity: 1 !important;
+        }
 
-input::placeholder,
-textarea::placeholder {
-    color: #6B7280 !important;
-    -webkit-text-fill-color: #6B7280 !important;
-    opacity: 1 !important;
-}
-.stTextInput input,
-.stTextArea textarea {
-    color: #111827 !important;
-    -webkit-text-fill-color: #111827 !important;
-    background-color: #FFFFFF !important;
-}
+        .stTextInput input,
+        .stTextArea textarea {
+            background-color: #FFFFFF !important;
+            color: #111827 !important;
+            -webkit-text-fill-color: #111827 !important;
+        }
+
+        .stTextInput input::placeholder,
+        .stTextArea textarea::placeholder {
+            color: #6B7280 !important;
+            -webkit-text-fill-color: #6B7280 !important;
+            opacity: 1 !important;
+        }
+
+        [data-baseweb="select"] input,
+        [data-baseweb="select"] div {
+            -webkit-text-fill-color: #111827 !important;
+        }
+
+        .brand-ai {
+            color: #B91C1C !important;
+            font-weight: 1000 !important;
+            letter-spacing: -0.04em;
+        }
         :root {
             --main-navy: #1F2F3F;
             --deep-navy: #172635;
@@ -1693,14 +1843,17 @@ def login_page() -> None:
         </style>
         <div class="login-hero">
             <img src="{FIRE_EMBLEM_DATA_URI}" alt="소방 상징 이미지">
-            <h1 class="login-hero-title">{APP_NAME}</h1>
-            <div class="login-hero-subtitle">소방공무원 행정·복무 업무 보조 서비스</div>
+            <h1 class="login-hero-title"><span>충남119 </span><span class="brand-ai">A</span><span> ss </span><span class="brand-ai">I</span><span> st</span></h1>
+            <div class="login-hero-subtitle">{APP_SUBTITLE}</div>
             <div class="official-notice">충남소방본부 제공 공식 AI가 아닌 비공식 참고 서비스입니다.</div>
         </div>
         <div class="login-divider"></div>
         """,
         unsafe_allow_html=True,
     )
+    notice = st.session_state.pop("logout_notice", "")
+    if notice:
+        st.error(notice)
     tab_login, tab_join = st.tabs(["로그인", "회원가입"])
     with tab_login:
         st.markdown("<div class='login-section-title'>로그인</div>", unsafe_allow_html=True)
@@ -1779,7 +1932,10 @@ def login_page() -> None:
 def logout(reason: str = "사용자 로그아웃") -> None:
     user_id = st.session_state.get("user_id", "unknown")
     add_audit(user_id, "LOGOUT", user_id, reason)
+    notice = "세션이 만료되었습니다." if "세션" in reason or "타임아웃" in reason else ""
     st.session_state.clear()
+    if notice:
+        st.session_state["logout_notice"] = notice
     st.rerun()
 
 
@@ -1788,13 +1944,12 @@ def check_session() -> None:
     if not user:
         return
     if user.get("force_logout"):
-        st.warning("관리자에 의해 로그아웃 처리되었습니다.")
         st.session_state.clear()
+        st.session_state["logout_notice"] = "관리자에 의해 로그아웃 처리되었습니다."
         st.rerun()
     last_ts = st.session_state.get("last_active_ts", time.time())
     if time.time() - last_ts > SESSION_TIMEOUT_SECONDS:
-        st.warning("10분 이상 미사용으로 자동 로그아웃되었습니다.")
-        logout("세션 타임아웃")
+        logout("세션이 만료되었습니다.")
     st.session_state["last_active_ts"] = time.time()
     users = load_users()
     for item in users:
@@ -1802,10 +1957,6 @@ def check_session() -> None:
             item["last_active"] = now_iso()
     save_json("users", users)
 
-
-# -----------------------------------------------------------------------------
-# 사용자 화면
-# -----------------------------------------------------------------------------
 
 def get_ai_instruction() -> str:
     settings = load_json("ai_settings", {})
@@ -1871,29 +2022,35 @@ def extract_pdf_text(file_path: Path, max_chars: int = 120000) -> str:
     except Exception:
         return ""
 
-def save_resource_pdf(resource_id: str, uploaded_file: Any) -> dict[str, str | int]:
-    """관리자가 첨부한 PDF를 저장하고, AI 검색용 텍스트 파일을 함께 만든다."""
+def validate_pdf_upload(uploaded_file: Any, max_mb: int) -> tuple[str, bytes]:
+    """업로드된 PDF의 확장자, MIME, 헤더, 크기를 검사한다."""
     if uploaded_file is None:
-        return {}
+        raise ValueError("첨부된 파일이 없습니다.")
 
-    filename = safe_filename(uploaded_file.name)
-
-    if not filename.lower().endswith(".pdf"):
+    original_name = safe_filename(getattr(uploaded_file, "name", "uploaded.pdf"))
+    if not original_name.lower().endswith(".pdf"):
         raise ValueError("PDF 파일만 첨부할 수 있습니다.")
 
-    data = uploaded_file.getvalue()
-    max_size = 20 * 1024 * 1024
+    mime_type = str(getattr(uploaded_file, "type", "") or "").lower()
+    if mime_type and mime_type not in {"application/pdf", "application/x-pdf"}:
+        raise ValueError("PDF MIME 형식이 올바르지 않습니다.")
 
+    data = uploaded_file.getvalue()
+    max_size = max_mb * 1024 * 1024
     if len(data) > max_size:
-        raise ValueError("PDF 파일은 20MB 이하만 첨부할 수 있습니다.")
+        raise ValueError(f"업로드 가능한 최대 파일 크기({max_mb}MB)를 초과하였습니다. 파일을 분할하거나 필요한 부분만 발췌하여 다시 등록해 주십시오.")
 
     if not data.startswith(b"%PDF"):
         raise ValueError("올바른 PDF 파일이 아닙니다.")
 
-    target_dir = UPLOAD_DIR / resource_id
-    target_dir.mkdir(parents=True, exist_ok=True)
+    return original_name, data
 
-    target_path = target_dir / filename
+
+def _write_pdf_and_extract(resource_id: str, original_name: str, data: bytes, root_name: str = "admin") -> dict[str, str | int | bool]:
+    storage_name = f"{secrets.token_hex(16)}.pdf"
+    target_dir = UPLOAD_DIR / root_name / resource_id
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target_path = target_dir / storage_name
     target_path.write_bytes(data)
 
     text = extract_pdf_text(target_path)
@@ -1907,15 +2064,61 @@ def save_resource_pdf(resource_id: str, uploaded_file: Any) -> dict[str, str | i
         chunk_count = len(split_text_chunks(text))
 
     return {
-        "attached_file_name": filename,
+        "attached_file_name": original_name,
+        "attached_file_original_name": original_name,
         "attached_file_path": str(target_path.relative_to(DATA_DIR)),
         "attached_file_size": len(data),
         "attached_file_text_path": text_path,
         "attached_file_text_length": len(text),
         "attached_file_text_status": "extracted" if text else "empty_or_scan_pdf",
         "attached_file_text_chunk_count": chunk_count,
-        "ai_search_enabled": True,
     }
+
+
+def save_resource_pdf(resource_id: str, uploaded_file: Any, max_mb: int = 50, root_name: str = "admin") -> dict[str, str | int | bool]:
+    """자료 PDF를 UUID 파일명으로 저장하고 AI 검색용 텍스트 파일을 함께 만든다."""
+    if uploaded_file is None:
+        return {}
+    original_name, data = validate_pdf_upload(uploaded_file, max_mb=max_mb)
+    return _write_pdf_and_extract(resource_id, original_name, data, root_name=root_name)
+
+
+def save_pending_request_pdf(request_id: str, uploaded_file: Any) -> dict[str, str | int | bool]:
+    """일반 사용자 등록 요청 PDF를 승인 전 보관 영역에 저장한다. 승인 전에는 AI 검색에 반영하지 않는다."""
+    if uploaded_file is None:
+        return {}
+    original_name, data = validate_pdf_upload(uploaded_file, max_mb=20)
+    storage_name = f"{secrets.token_hex(16)}.pdf"
+    target_dir = UPLOAD_DIR / "pending" / request_id
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target_path = target_dir / storage_name
+    target_path.write_bytes(data)
+    return {
+        "attached_file_name": original_name,
+        "attached_file_original_name": original_name,
+        "attached_file_path": str(target_path.relative_to(DATA_DIR)),
+        "attached_file_size": len(data),
+        "attached_file_text_status": "승인 전 미반영",
+        "attached_file_text_length": 0,
+        "attached_file_text_chunk_count": 0,
+    }
+
+
+def promote_pending_pdf_to_resource(resource_id: str, request: dict[str, Any]) -> dict[str, str | int | bool]:
+    """승인된 사용자 요청 PDF를 승인 자료 영역으로 복사하고 본문을 추출한다."""
+    rel_path = str(request.get("attached_file_path", "") or "").strip()
+    if not rel_path:
+        return {}
+    source_path = DATA_DIR / rel_path
+    if not source_path.exists():
+        raise ValueError("요청에 첨부된 PDF 파일을 찾을 수 없습니다.")
+    data = source_path.read_bytes()
+    if len(data) > 50 * 1024 * 1024:
+        raise ValueError("승인 처리 가능한 PDF 최대 크기(50MB)를 초과했습니다.")
+    if not data.startswith(b"%PDF"):
+        raise ValueError("첨부 PDF 헤더가 올바르지 않습니다.")
+    original_name = safe_filename(str(request.get("attached_file_original_name") or request.get("attached_file_name") or "uploaded.pdf"))
+    return _write_pdf_and_extract(resource_id, original_name, data, root_name="approved")
 
 
 def read_resource_attached_text(resource: dict[str, Any], max_chars: int | None = None) -> str:
@@ -2218,7 +2421,7 @@ def build_resource_context(question: str, limit: int = 8) -> tuple[str, list[dic
     """질문과 관련된 등록 자료의 실제 본문 발췌를 구성한다.
 
     안전 원칙:
-    - Public/Private는 자료실 표시 여부이므로 AI 검색 여부와 분리한다.
+    - 자료 노출 범위는 화면 표시 여부이므로 AI 검색 여부와 분리한다.
     - ai_search_enabled=false, 삭제됨, 사용 금지, 업로드 금지 자료는 제외한다.
     - PDF에서 추출된 실제 본문 또는 충분한 관리자 요약만 Gemini에 전달한다.
     - 자료명만 맞는 자료는 근거로 넘기지 않는다.
@@ -2367,14 +2570,14 @@ def build_resource_context(question: str, limit: int = 8) -> tuple[str, list[dic
             selected_resources.append(r)
             seen_resource_ids.add(resource_id)
 
-        visibility_label = VISIBILITY_LABELS.get(normalize_visibility(r.get("visibility")), "비공개")
+        vis_label = visibility_label(r.get("visibility"))
 
         blocks.append(
             f"[관련 근거 {idx}]\n"
             f"자료명: {r.get('title', '')}\n"
             f"관련 근거: {r.get('category', '')}\n"
             f"발행기관: {r.get('agency', '')}\n"
-            f"공개범위: {visibility_label}\n"
+            f"자료 노출 범위: {vis_label}\n"
             f"공식 출처 URL: {r.get('source_url', '')}\n"
             f"최종 확인일: {r.get('checked_at', '')}\n"
             f"검색점수: {score}\n"
@@ -2457,7 +2660,7 @@ def generate_ai_answer(category: str, question: str) -> str:
 
 반드시 지켜야 할 원칙:
 1. 아래 '등록 자료 본문 발췌'에 실제로 적힌 내용만 근거로 답변한다.
-2. Public/Private는 자료실 표시 여부일 뿐이며, 전달된 본문 발췌는 관리자가 AI 검색 사용을 허용한 등록 자료로 본다.
+2. 자료 노출 범위는 화면 표시 여부일 뿐이며, 전달된 본문 발췌는 관리자가 AI 검색 사용을 허용한 등록 자료로 본다.
 3. 자료명, 발행기관, 제목만 보고 세부 내용을 추정하지 않는다.
 4. 등록 자료 본문 발췌에 없는 조문 번호, 지급 기준, 절차, 금액, 날짜, 기관 지침은 절대 지어내지 않는다.
 5. 질문과 관련된 내용이 일부만 확인되면 '등록 자료 기준으로 확인되는 범위'와 '추가 확인이 필요한 사항'을 구분한다.
@@ -2571,12 +2774,15 @@ def home_page() -> None:
             """,
             unsafe_allow_html=True,
         )
+    used, limit, remaining, ratio = question_usage(user)
+    limit_reached = remaining <= 0
     st.markdown(
-        """
+        f"""
         <div class="question-card question-hero">
             <h2>질문하기</h2>
             <div class="muted">궁금한 복무·행정 내용을 한 번에 입력하십시오. 분야는 자동으로 분류됩니다.</div>
             <div class="question-note">
+                오늘 사용량: <b>{used} / {limit}</b> · 남은질문: <b>{remaining}</b> · 매일 00:00 초기화<br>
                 질문 내용은 본인만 확인할 수 있습니다. 타인의 질문 내용은 공개되지 않습니다.<br>
                 <span class="privacy-strong">개인정보·민감정보·보안자료는 절대 입력하지 마십시오.</span><br>
                 정확한 내용은 담당 부서와 공식 자료로 확인하십시오.
@@ -2585,6 +2791,11 @@ def home_page() -> None:
         """,
         unsafe_allow_html=True,
     )
+    if ratio >= 0.8 and not limit_reached:
+        st.warning("일일 질문 한도의 80% 이상을 사용했습니다.")
+    if limit_reached:
+        st.error("오늘 일일 질문 한도를 모두 사용했습니다. 질문 기능은 내일 00:00 이후 다시 사용할 수 있습니다.")
+
     with st.form("question_form"):
         label_col, ai_col = st.columns([3, 1])
         with label_col:
@@ -2596,8 +2807,9 @@ def home_page() -> None:
             height=330,
             placeholder="예: 병가 사용 시 필요한 증빙서류와 복무 처리는 어떻게 확인해야 하나요?",
             label_visibility="collapsed",
+            disabled=limit_reached,
         )
-        submitted = st.form_submit_button("질문하기", type="primary", use_container_width=True)
+        submitted = st.form_submit_button("질문하기", type="primary", use_container_width=True, disabled=limit_reached)
     if submitted:
         questions = load_json("questions", [])
         category = classify_question_category(question)
@@ -2622,6 +2834,8 @@ def home_page() -> None:
             add_audit(user["user_id"], "QUESTION_BLOCKED", blocked_record["id"], ", ".join(reasons))
             st.error("개인정보·민감정보·보안자료로 의심되는 내용이 있어 저장하지 않았습니다. 해당 내용을 제거하고 다시 질문하십시오.")
             st.caption("차단 사유: " + ", ".join(reasons))
+        elif today_question_count(user) >= daily_question_limit(user):
+            st.error("오늘 일일 질문 한도를 모두 사용했습니다. 질문 기능은 내일 00:00 이후 다시 사용할 수 있습니다.")
         else:
             answer = generate_ai_answer(category, question)
             record = {
@@ -2675,7 +2889,7 @@ def home_page() -> None:
 
 
 def resources_page() -> None:
-    st.markdown("# 법령·조례 자료")
+    st.markdown("# 법령 자료실")
     box(
         "info",
         "자료 공개 기준",
@@ -2701,9 +2915,9 @@ def resources_page() -> None:
     if not filtered:
         st.info("표시 가능한 공개 자료가 없습니다.")
     for r in filtered:
-        kind = "public"
-        label = "공개자료"
         source_url = r.get("source_url", "")
+        label = visibility_label(r.get("visibility"))
+        kind = "public" if normalize_visibility(r.get("visibility")) == "Public" else ""
         st.markdown(
             f"""
             <div class="resource-card">
@@ -2727,22 +2941,35 @@ def resource_request_page() -> None:
     st.markdown("# 자료 등록 요청")
     box(
         "warn",
-        "파일 업로드 금지",
-        "일반 사용자는 원본 파일을 업로드할 수 없습니다. 자료명, 발행기관, 공식 출처 URL, 요청 사유만 제출하십시오.\n"
-        "내부 매뉴얼, 내부 공문, 시스템 화면 캡처, 유료자료, 개인정보 포함 자료는 등록 요청하지 마십시오.",
+        "자료 등록 요청 안내",
+        "개인정보, 민감정보, 보안자료, 비공개 내부자료, 저작권 침해 우려가 있는 자료는 요청할 수 없습니다.\n"
+        "첨부 가능한 파일 형식: PDF\n"
+        "일반 사용자 PDF 최대 크기: 20MB\n"
+        "자료 용량이 큰 경우 PDF를 여러 개로 분할하여 각각 등록할 수 있습니다.\n"
+        "관리자 승인 전까지 등록 요청 자료는 AI 답변에 반영되지 않습니다.",
     )
-    with st.form("resource_request_form"):
-        title = st.text_input("자료명", max_chars=120)
-        category = st.selectbox("관련 근거", RESOURCE_CATEGORIES)
-        agency = st.text_input("발행기관", max_chars=80)
-        source_url = st.text_input("공식 출처 URL", placeholder="https://...")
-        reason = st.text_area("요청 사유", max_chars=500)
+
+    success_message = st.session_state.pop("resource_request_success_message", "")
+    if success_message:
+        st.success(success_message)
+
+    if "resource_request_form_seq" not in st.session_state:
+        st.session_state["resource_request_form_seq"] = 0
+    form_key = f"resource_request_form_{st.session_state['resource_request_form_seq']}"
+
+    with st.form(form_key):
+        title = st.text_input("자료명", max_chars=120, key=f"req_title_{form_key}")
+        category = st.selectbox("관련 근거", RESOURCE_CATEGORIES, key=f"req_category_{form_key}")
+        agency = st.text_input("발행기관", max_chars=80, key=f"req_agency_{form_key}")
+        source_url = st.text_input("출처 URL", placeholder="선택 입력: https://...", key=f"req_url_{form_key}")
+        reason = st.text_area("등록 요청 사유", max_chars=500, key=f"req_reason_{form_key}")
+        pdf_file = st.file_uploader("첨부 PDF", type=["pdf"], key=f"req_pdf_{form_key}", help="선택 사항입니다. PDF는 20MB 이하만 첨부할 수 있습니다.")
         submitted = st.form_submit_button("자료 등록 요청", type="primary", use_container_width=True)
     if submitted:
-        if not title.strip() or not agency.strip() or not source_url.strip() or not reason.strip():
-            st.error("자료명, 발행기관, 공식 출처 URL, 등록 요청 사유는 필수입니다.")
-        elif not is_valid_url(source_url.strip()):
-            st.error("공식 출처 URL 형식이 올바르지 않습니다.")
+        if not title.strip() or not agency.strip() or not reason.strip():
+            st.error("자료명, 발행기관, 등록 요청 사유는 필수입니다.")
+        elif source_url.strip() and not is_valid_url(source_url.strip()):
+            st.error("출처 URL 형식이 올바르지 않습니다.")
         else:
             combined_request_text = "\n".join([title, agency, source_url, reason])
             reasons = detect_sensitive_text(combined_request_text)
@@ -2751,8 +2978,14 @@ def resource_request_page() -> None:
                 st.caption("차단 사유: " + ", ".join(reasons))
                 return
             requests = load_json("resource_requests", [])
+            request_id = uid("req")
+            try:
+                file_info = save_pending_request_pdf(request_id, pdf_file) if pdf_file is not None else {}
+            except ValueError as e:
+                st.error(str(e))
+                return
             record = {
-                "id": uid("req"),
+                "id": request_id,
                 "user_id": user["user_id"],
                 "request_type": "등록",
                 "title": title.strip(),
@@ -2760,16 +2993,28 @@ def resource_request_page() -> None:
                 "agency": agency.strip(),
                 "source_url": source_url.strip(),
                 "reason": reason.strip(),
-                "status": "대기",
+                "status": "접수 완료",
+                "processing_stage": "관리자 검토 중",
+                "ai_reflect_status": "AI 미반영",
                 "admin_memo": "",
                 "created_at": now_iso(),
                 "processed_at": "",
                 "processed_by": "",
+                **file_info,
             }
             requests.append(record)
             save_json("resource_requests", requests)
             add_audit(user["user_id"], "RESOURCE_REQUEST_CREATE", record["id"], title.strip())
-            st.success("자료 등록 요청이 접수되었습니다. 관리자는 공개 가능 여부만 제한적으로 확인합니다.")
+            st.session_state["resource_request_form_seq"] += 1
+            st.session_state["resource_request_success_message"] = (
+                "자료 등록 요청이 정상적으로 접수되었습니다.\n\n"
+                f"요청번호: {record['id']}\n\n"
+                "상태: 승인 대기\n\n"
+                "AI 반영 상태: AI 미반영\n\n"
+                "관리자 승인 전까지 해당 자료는 AI 답변에 사용되지 않습니다."
+            )
+            st.rerun()
+
     st.markdown("### 자료 삭제 요청")
     public_resources = [r for r in load_json("resources", []) if is_user_visible_resource(r)]
     if public_resources:
@@ -2799,7 +3044,9 @@ def resource_request_page() -> None:
                     "agency": target.get("agency", ""),
                     "source_url": target.get("source_url", ""),
                     "reason": delete_reason.strip(),
-                    "status": "대기",
+                    "status": "접수 완료",
+                    "processing_stage": "관리자 검토 중",
+                    "ai_reflect_status": "해당 없음",
                     "admin_memo": "",
                     "created_at": now_iso(),
                     "processed_at": "",
@@ -2823,7 +3070,9 @@ def resource_request_page() -> None:
                     "자료명": item.get("title", ""),
                     "관련근거": item.get("category", ""),
                     "발행기관": item.get("agency", ""),
-                    "상태": item.get("status", ""),
+                    "처리상태": request_status_label(item.get("status")),
+                    "진행단계": request_progress_label(item),
+                    "AI반영": request_ai_status_label(item),
                     "관리자메모": item.get("admin_memo", ""),
                 }
             )
@@ -2834,9 +3083,6 @@ def resource_request_page() -> None:
     render_common_disclaimer()
 
 
-# -----------------------------------------------------------------------------
-# 관리자 화면
-# -----------------------------------------------------------------------------
 def admin_dashboard() -> None:
     users = load_users()
     questions = load_json("questions", [])
@@ -2968,7 +3214,7 @@ def admin_resource_register() -> None:
         box(
             "warn",
             "공개 전 확인",
-            "공개 여부가 불명확한 자료는 공개하지 마십시오. 기본값은 비공개입니다.\n"
+            "자료 노출 범위는 화면 표시 여부이며, AI 검색 여부는 별도로 설정합니다. 기본 노출 범위는 화면 미표시입니다.\n"
             "관리자는 자료의 정확성, 최신성, 적법성, 저작권 상태를 보증하지 않습니다.\n"
             "관리자는 공식 출처 존재 여부와 공개 가능 여부만 제한적으로 확인합니다.",
         )
@@ -2976,34 +3222,31 @@ def admin_resource_register() -> None:
             title = st.text_input("자료명")
             category = st.selectbox("관련 근거", RESOURCE_CATEGORIES)
             agency = st.text_input("발행기관")
-            source_url = st.text_input("공식 출처 URL")
-            summary = st.text_area("요약 또는 안내문", height=100)
+            source_url = st.text_input("출처 URL")
+            summary = st.text_area("자료 설명 또는 안내문", height=100)
             checked_at = st.date_input("최종 확인일", value=datetime.now())
-            st.markdown("#### 공개범위 선택")
-            visibility_choice = st.radio(
-                "공개범위",
-                options=["비공개", "공개"],
-                horizontal=True,
-                index=0,
-            )
-            visibility = "Public" if visibility_choice == "공개" else "Private"
+            visibility_choice = st.selectbox("자료 노출 범위", VISIBILITY_OPTIONS, index=3)
+            ai_search_choice = st.selectbox("AI 검색 여부", AI_SEARCH_OPTIONS, index=0)
+            resource_status = st.selectbox("자료 상태", RESOURCE_STATUS_OPTIONS, index=0)
             non_public_reason = ""
-            if visibility == "Private":
-                non_public_reason = st.text_area("비공개 사유", height=70, placeholder="예: 공개 여부 확인 필요")
-            pdf_file = st.file_uploader("PDF 첨부", type=["pdf"])
+            if visibility_choice in ["관리자 전용", "화면 미표시"]:
+                non_public_reason = st.text_area("화면 미표시 또는 제한 사유", height=70, placeholder="예: 공개 여부 확인 필요")
+            pdf_file = st.file_uploader("PDF 첨부", type=["pdf"], help="관리자 PDF 최대 크기: 50MB")
             submitted = st.form_submit_button("자료 등록", type="primary", use_container_width=True)
         if submitted:
+            visibility = visibility_code(visibility_choice)
+            ai_search_enabled = ai_search_choice == "AI 검색 포함"
             if not title.strip() or not agency.strip():
                 st.error("자료명, 발행기관은 필수입니다.")
             elif visibility == "Public" and not source_url.strip():
-                st.error("공개 자료는 공식 출처 URL을 입력해야 합니다.")
+                st.error("전체 공개 자료는 공식 출처 URL을 입력해야 합니다.")
             elif source_url.strip() and not is_valid_url(source_url.strip()):
-                st.error("공식 출처 URL 형식이 올바르지 않습니다.")
+                st.error("출처 URL 형식이 올바르지 않습니다.")
             else:
                 resources = load_json("resources", [])
                 resource_id = uid("res")
                 try:
-                    file_info = save_resource_pdf(resource_id, pdf_file) if pdf_file is not None else {}
+                    file_info = save_resource_pdf(resource_id, pdf_file, max_mb=50, root_name="admin") if pdf_file is not None else {}
                 except ValueError as e:
                     st.error(str(e))
                     return
@@ -3015,24 +3258,26 @@ def admin_resource_register() -> None:
                     "source_url": source_url.strip(),
                     "summary": summary.strip(),
                     "visibility": visibility,
-                    "ai_search_enabled": True,
+                    "ai_search_enabled": ai_search_enabled,
+                    "status": resource_status,
                     "non_public_reason": non_public_reason,
                     "created_at": now_iso(),
                     "checked_at": checked_at.strftime("%Y-%m-%d"),
                     "created_by": admin["user_id"],
                     "updated_at": now_iso(),
+                    "admin_memo": "",
                     **file_info,
                 }
                 resources.append(record)
                 save_json("resources", resources)
-                add_audit(admin["user_id"], "RESOURCE_CREATE", record["id"], f"{title.strip()} / {visibility}")
+                add_audit(admin["user_id"], "RESOURCE_CREATE", record["id"], f"{title.strip()} / {visibility_label(visibility)} / AI {ai_search_enabled}")
                 st.success("자료가 등록되었습니다.")
                 st.rerun()
         box(
             "disclaimer",
             "관리자 자료 등록 하단 문구",
-            "자료 공개범위는 관리자가 반드시 직접 선택해야 합니다. 기본값은 비공개입니다. 관리자는 자료의 법적 정확성, 최신성, 완전성, 저작권 상태를 보증하지 않으며, 공식 출처 존재 여부와 공개 가능 여부만 제한적으로 확인합니다.\n"
-            "공개 여부가 불명확한 자료는 공개하지 말고 비공개로 처리하십시오.\n"
+            "자료 노출 범위는 관리자가 반드시 직접 선택해야 합니다. 기본값은 화면 미표시입니다. 관리자는 자료의 법적 정확성, 최신성, 완전성, 저작권 상태를 보증하지 않으며, 공식 출처 존재 여부와 공개 가능 여부만 제한적으로 확인합니다.\n"
+            "공개 여부가 불명확한 자료는 공개하지 말고 화면 미표시 또는 관리자 전용으로 처리하십시오.\n"
             "내부 매뉴얼, 교육자료, 책자, 유료자료, 내부 공문, 시스템 캡처 등은 저작권·보안·공개범위 문제가 있을 수 있으므로 원문 공개를 제한하십시오.",
         )
 
@@ -3040,29 +3285,31 @@ def admin_resource_register() -> None:
 def admin_resource_manage() -> None:
     admin = current_user()
     assert admin is not None
-    st.markdown("### 자료 목록 및 공개범위 변경·삭제")
+    st.markdown("### 자료 목록 및 수정·삭제")
     resources = load_json("resources", [])
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
-        visibility_filter = st.selectbox("공개범위 필터", ["전체", "공개", "비공개"])
+        visibility_filter = st.selectbox("자료 노출 범위 필터", ["전체"] + VISIBILITY_OPTIONS)
     with col2:
         category_filter = st.selectbox("관련 근거 필터", ["전체"] + RESOURCE_CATEGORIES, key="res_manage_cat")
     with col3:
+        status_filter = st.selectbox("자료 상태 필터", ["전체"] + RESOURCE_STATUS_OPTIONS)
+    with col4:
         keyword = st.text_input("검색", key="res_manage_search")
     filtered = []
     for r in resources:
-        is_public = normalize_visibility(r.get("visibility")) == "Public"
-        if visibility_filter == "공개" and not is_public:
-            continue
-        if visibility_filter == "비공개" and is_public:
+        vis_code = normalize_visibility(r.get("visibility"))
+        if visibility_filter != "전체" and vis_code != visibility_code(visibility_filter):
             continue
         if category_filter != "전체" and r.get("category") != category_filter:
+            continue
+        if status_filter != "전체" and str(r.get("status", "유효")) != status_filter:
             continue
         haystack = " ".join([str(r.get(k, "")) for k in ["title", "agency", "summary", "source_url"]]).lower()
         if keyword and keyword.lower() not in haystack:
             continue
         item = dict(r)
-        item["visibility_label"] = "공개" if is_public else "비공개"
+        item["visibility_label"] = visibility_label(item.get("visibility"))
         text_status = str(item.get("attached_file_text_status", "") or "")
         text_length = int(item.get("attached_file_text_length", 0) or 0)
         chunk_count = int(item.get("attached_file_text_chunk_count", 0) or 0)
@@ -3072,21 +3319,18 @@ def admin_resource_manage() -> None:
             item["text_status_label"] = "실패 또는 스캔본"
         else:
             item["text_status_label"] = "PDF 없음"
-        item["ai_search_label"] = "가능" if is_ai_usable_resource(item) else f"제외: {ai_unusable_reason(item)}"
+        item["ai_search_label"] = "포함" if is_ai_usable_resource(item) else f"제외: {ai_unusable_reason(item)}"
         filtered.append(item)
     if filtered:
         table = pd.DataFrame(filtered)[
-            ["created_at", "title", "category", "agency", "visibility_label", "ai_search_label", "text_status_label", "checked_at", "created_by", "id"]
-        ].rename(columns={"category": "관련근거", "visibility_label": "공개상태", "ai_search_label": "AI 검색", "text_status_label": "본문 추출 상태"})
+            ["created_at", "title", "category", "agency", "visibility_label", "ai_search_label", "status", "text_status_label", "checked_at", "created_by", "id"]
+        ].rename(columns={"category": "관련근거", "visibility_label": "자료노출", "ai_search_label": "AI 검색", "status": "자료상태", "text_status_label": "본문 추출 상태"})
         st.dataframe(table.sort_values("created_at", ascending=False), use_container_width=True, hide_index=True)
     else:
         st.info("자료가 없습니다.")
     for r in sorted(filtered, key=lambda x: x.get("created_at", ""), reverse=True):
-        current_label = "공개" if normalize_visibility(r.get("visibility")) == "Public" else "비공개"
-        with st.expander(f"{r.get('title')} · {current_label} · {r.get('id')}"):
-            st.write("공식 출처:", r.get("source_url"))
-            st.write("요약:", r.get("summary"))
-            st.write("비공개 사유:", r.get("non_public_reason", ""))
+        current_visibility_label = visibility_label(r.get("visibility"))
+        with st.expander(f"{r.get('title')} · {current_visibility_label} · {r.get('id')}"):
             st.caption(
                 "본문 추출 상태: "
                 f"{r.get('text_status_label', '미확인')} / "
@@ -3095,47 +3339,69 @@ def admin_resource_manage() -> None:
             st.caption(f"AI 검색 사용: {r.get('ai_search_label', '미확인')}")
             if r.get("attached_file_name") and not is_text_extracted_status(r.get("attached_file_text_status")):
                 st.warning("PDF 본문 추출이 실패했거나 스캔본일 수 있습니다. 이 자료는 AI 답변 근거로 제대로 사용되지 않을 수 있습니다.")
-            new_label = st.selectbox(
-                "공개범위 변경",
-                ["비공개", "공개"],
-                index=0 if current_label == "비공개" else 1,
-                key=f"vis_{r['id']}",
-            )
-            new_visibility = "Public" if new_label == "공개" else "Private"
-            reason = st.text_input("변경 사유", key=f"vis_reason_{r['id']}")
-            if st.button("공개범위 저장", key=f"save_vis_{r['id']}"):
-                old = r.get("visibility")
-                all_resources = load_json("resources", [])
-                for item in all_resources:
-                    if item.get("id") == r.get("id"):
-                        item["visibility"] = new_visibility
-                        item["updated_at"] = now_iso()
-                        if new_visibility == "Private" and reason.strip():
-                            item["non_public_reason"] = reason.strip()
-                save_json("resources", all_resources)
-                add_audit(admin["user_id"], "RESOURCE_VISIBILITY_CHANGE", r["id"], f"{old} -> {new_visibility} / {reason}")
-                st.success("공개범위가 변경되었습니다.")
-                st.rerun()
 
-            current_ai_enabled = bool(r.get("ai_search_enabled", True))
-            new_ai_enabled = st.checkbox(
-                "AI 답변 검색에 사용",
-                value=current_ai_enabled,
-                key=f"ai_search_enabled_{r['id']}",
-                help="비공개 자료라도 이 항목이 켜져 있고 본문이 추출되어 있으면 AI 답변 근거로 사용됩니다.",
-            )
-            if st.button("AI 검색 설정 저장", key=f"save_ai_search_{r['id']}"):
+            with st.form(f"edit_resource_form_{r['id']}"):
+                title = st.text_input("자료명", value=r.get("title", ""), key=f"edit_title_{r['id']}")
+                category = st.selectbox("관련 근거", RESOURCE_CATEGORIES, index=RESOURCE_CATEGORIES.index(r.get("category")) if r.get("category") in RESOURCE_CATEGORIES else 0, key=f"edit_category_{r['id']}")
+                agency = st.text_input("발행기관", value=r.get("agency", ""), key=f"edit_agency_{r['id']}")
+                source_url = st.text_input("출처 URL", value=r.get("source_url", ""), key=f"edit_url_{r['id']}")
+                summary = st.text_area("자료 설명", value=r.get("summary", ""), height=100, key=f"edit_summary_{r['id']}")
+                checked_default = datetime.now()
+                try:
+                    checked_default = datetime.fromisoformat(str(r.get("checked_at", today_str()))[:10])
+                except Exception:
+                    pass
+                checked_at = st.date_input("최종 확인일", value=checked_default, key=f"edit_checked_{r['id']}")
+                vis_index = VISIBILITY_OPTIONS.index(current_visibility_label) if current_visibility_label in VISIBILITY_OPTIONS else 3
+                visibility_choice = st.selectbox("자료 노출 범위", VISIBILITY_OPTIONS, index=vis_index, key=f"edit_visibility_{r['id']}")
+                ai_search_choice = st.selectbox("AI 검색 여부", AI_SEARCH_OPTIONS, index=0 if r.get("ai_search_enabled", True) else 1, key=f"edit_ai_{r['id']}")
+                resource_status = st.selectbox("자료 상태", RESOURCE_STATUS_OPTIONS, index=RESOURCE_STATUS_OPTIONS.index(r.get("status", "유효")) if r.get("status", "유효") in RESOURCE_STATUS_OPTIONS else 0, key=f"edit_status_{r['id']}")
+                admin_memo = st.text_area("관리자 메모", value=r.get("admin_memo", ""), height=70, key=f"edit_memo_{r['id']}")
+                replace_pdf = st.file_uploader("PDF 교체", type=["pdf"], key=f"replace_pdf_{r['id']}", help="새 PDF를 첨부하면 기존 본문 색인을 새 PDF 기준으로 다시 생성합니다. 최대 50MB")
+                save_edit = st.form_submit_button("수정사항 저장", type="primary", use_container_width=True)
+            if save_edit:
+                visibility = visibility_code(visibility_choice)
+                if not title.strip() or not agency.strip():
+                    st.error("자료명, 발행기관은 필수입니다.")
+                    continue
+                if visibility == "Public" and not source_url.strip():
+                    st.error("전체 공개 자료는 공식 출처 URL을 입력해야 합니다.")
+                    continue
+                if source_url.strip() and not is_valid_url(source_url.strip()):
+                    st.error("출처 URL 형식이 올바르지 않습니다.")
+                    continue
+                try:
+                    file_info = save_resource_pdf(r["id"], replace_pdf, max_mb=50, root_name="admin") if replace_pdf is not None else {}
+                except ValueError as e:
+                    st.error(str(e))
+                    continue
                 all_resources = load_json("resources", [])
                 for item in all_resources:
                     if item.get("id") == r.get("id"):
-                        old_value = item.get("ai_search_enabled", True)
-                        item["ai_search_enabled"] = bool(new_ai_enabled)
-                        item["updated_at"] = now_iso()
-                        add_audit(admin["user_id"], "RESOURCE_AI_SEARCH_CHANGE", r["id"], f"{old_value} -> {new_ai_enabled}")
+                        item.update({
+                            "title": title.strip(),
+                            "category": category,
+                            "agency": agency.strip(),
+                            "source_url": source_url.strip(),
+                            "summary": summary.strip(),
+                            "checked_at": checked_at.strftime("%Y-%m-%d"),
+                            "visibility": visibility,
+                            "ai_search_enabled": ai_search_choice == "AI 검색 포함",
+                            "status": resource_status,
+                            "admin_memo": admin_memo.strip(),
+                            "updated_at": now_iso(),
+                            "updated_by": admin["user_id"],
+                        })
+                        if visibility in ["Hidden", "AdminOnly"] and not item.get("non_public_reason"):
+                            item["non_public_reason"] = "관리자 수정으로 화면 표시 제한"
+                        if file_info:
+                            item.update(file_info)
                         break
                 save_json("resources", all_resources)
-                st.success("AI 검색 설정이 저장되었습니다.")
+                add_audit(admin["user_id"], "RESOURCE_UPDATE", r["id"], f"{title.strip()} / PDF교체 {bool(file_info)}")
+                st.success("자료 수정사항이 저장되었습니다.")
                 st.rerun()
+
             st.divider()
             st.markdown("#### 자료 삭제")
             st.caption("삭제하면 등록 자료 목록과 일반 사용자 자료 화면에서 즉시 제거됩니다. 삭제 작업은 감사로그에 기록됩니다.")
@@ -3144,17 +3410,18 @@ def admin_resource_manage() -> None:
             if st.button("자료 삭제", key=f"delete_resource_{r['id']}", type="secondary", disabled=not delete_confirm):
                 all_resources = load_json("resources", [])
                 before_count = len(all_resources)
-                all_resources = [item for item in all_resources if item.get("id") != r.get("id")]
+                for item in all_resources:
+                    if item.get("id") == r.get("id"):
+                        item["deleted"] = True
+                        item["status"] = "삭제됨"
+                        item["ai_search_enabled"] = False
+                        item["updated_at"] = now_iso()
+                        item["delete_reason"] = delete_reason.strip() or "사유 미입력"
                 if len(all_resources) == before_count:
                     st.error("삭제할 자료를 찾지 못했습니다. 화면을 새로고침한 뒤 다시 시도하십시오.")
                 else:
                     save_json("resources", all_resources)
-                    add_audit(
-                        admin["user_id"],
-                        "RESOURCE_DELETE",
-                        r["id"],
-                        f"{r.get('title', '')} / {delete_reason.strip() or '사유 미입력'}",
-                    )
+                    add_audit(admin["user_id"], "RESOURCE_DELETE", r["id"], f"{r.get('title', '')} / {delete_reason.strip() or '사유 미입력'}")
                     st.success("자료가 삭제되었습니다.")
                     st.rerun()
 
@@ -3167,12 +3434,12 @@ def admin_resource_requests() -> None:
     for req in requests:
         if not req.get("request_type"):
             req["request_type"] = "등록"
-    status_filter = st.selectbox("상태 필터", ["전체", "대기", "승인", "반려", "등록금지"])
+    status_filter = st.selectbox("상태 필터", ["전체"] + REQUEST_STATUS_OPTIONS)
     type_filter = st.selectbox("요청구분 필터", ["전체", "등록", "삭제"])
     filtered = [
         r
         for r in requests
-        if (status_filter == "전체" or r.get("status") == status_filter)
+        if (status_filter == "전체" or request_status_label(r.get("status")) == status_filter)
         and (type_filter == "전체" or r.get("request_type", "등록") == type_filter)
     ]
     if filtered:
@@ -3186,7 +3453,9 @@ def admin_resource_requests() -> None:
                     "자료명": r.get("title", ""),
                     "관련근거": r.get("category", ""),
                     "발행기관": r.get("agency", ""),
-                    "상태": r.get("status", ""),
+                    "처리상태": request_status_label(r.get("status")),
+                    "진행단계": request_progress_label(r),
+                    "AI반영": request_ai_status_label(r),
                     "요청ID": r.get("id", ""),
                 }
             )
@@ -3196,59 +3465,169 @@ def admin_resource_requests() -> None:
         st.info("자료 요청이 없습니다.")
     for req in sorted(filtered, key=lambda x: x.get("created_at", ""), reverse=True):
         req_type = req.get("request_type", "등록")
-        with st.expander(f"{req_type} 요청 · {req.get('title')} · {req.get('status')} · {req.get('id')}"):
+        status_label = request_status_label(req.get("status"))
+        with st.expander(f"{req_type} 요청 · {req.get('title')} · {status_label} · {req.get('id')}"):
             st.write("요청 구분:", req_type)
             st.write("요청자:", req.get("user_id"))
             st.write("관련 근거:", req.get("category"))
             st.write("발행기관:", req.get("agency"))
-            st.write("공식 출처 URL:", req.get("source_url"))
+            st.write("출처 URL:", req.get("source_url"))
+            if req.get("attached_file_name"):
+                st.write("첨부 PDF:", f"{req.get('attached_file_name')} / {int(req.get('attached_file_size', 0) or 0):,} bytes")
             if req_type == "삭제":
                 st.write("삭제 대상 자료 ID:", req.get("resource_id", ""))
             st.write("요청 사유:", req.get("reason"))
-            memo = st.text_area("처리 메모", value=req.get("admin_memo", ""), key=f"memo_{req['id']}")
-            if req.get("status") != "대기":
-                st.info(f"이미 {req.get('status')} 처리된 요청입니다.")
+            if status_label not in ["접수 완료", "관리자 검토 중", "보류"]:
+                st.info(f"이미 {status_label} 처리된 요청입니다.")
+                st.caption(f"관리자 메모: {req.get('admin_memo', '')}")
                 continue
+
+            memo = st.text_area("처리 메모", value=req.get("admin_memo", ""), key=f"memo_{req['id']}")
+
+            if req_type == "등록":
+                st.markdown("#### 승인 시 등록 정보")
+                title = st.text_input("자료명", value=req.get("title", ""), key=f"approve_title_{req['id']}")
+                category = st.selectbox("관련 근거", RESOURCE_CATEGORIES, index=RESOURCE_CATEGORIES.index(req.get("category")) if req.get("category") in RESOURCE_CATEGORIES else 0, key=f"approve_cat_{req['id']}")
+                agency = st.text_input("발행기관", value=req.get("agency", ""), key=f"approve_agency_{req['id']}")
+                source_url = st.text_input("출처 URL", value=req.get("source_url", ""), key=f"approve_url_{req['id']}")
+                summary = st.text_area("자료 설명", value=req.get("reason", ""), height=80, key=f"approve_summary_{req['id']}")
+                checked_at = st.date_input("최종 확인일", value=datetime.now(), key=f"approve_checked_{req['id']}")
+                visibility_choice = st.selectbox("자료 노출 범위", VISIBILITY_OPTIONS, index=3, key=f"approve_vis_{req['id']}")
+                ai_search_choice = st.selectbox("AI 검색 여부", AI_SEARCH_OPTIONS, index=0, key=f"approve_ai_{req['id']}")
+                resource_status = st.selectbox("자료 상태", RESOURCE_STATUS_OPTIONS, index=0, key=f"approve_status_{req['id']}")
+                replace_pdf = st.file_uploader("PDF 교체 또는 추가", type=["pdf"], key=f"approve_pdf_{req['id']}", help="필요 시 요청 PDF 대신 새 PDF를 첨부합니다. 최대 50MB")
+
             col1, col2, col3 = st.columns(3)
             with col1:
                 approve = st.button("승인", key=f"approve_{req['id']}")
             with col2:
                 reject = st.button("반려", key=f"reject_{req['id']}")
             with col3:
-                prohibit = st.button("등록금지", key=f"prohibit_{req['id']}", disabled=(req_type == "삭제"))
-            if approve or reject or prohibit:
-                new_status = "승인" if approve else "반려" if reject else "등록금지"
+                hold = st.button("보류", key=f"hold_{req['id']}", disabled=(req_type == "삭제" and False))
+
+            if approve or reject or hold:
+                all_requests = load_json("resource_requests", [])
+                if hold:
+                    for item in all_requests:
+                        if item.get("id") == req.get("id"):
+                            item["status"] = "보류"
+                            item["processing_stage"] = "보류"
+                            item["ai_reflect_status"] = request_ai_status_label(item)
+                            item["admin_memo"] = memo.strip()
+                            item["processed_at"] = now_iso()
+                            item["processed_by"] = admin["user_id"]
+                    save_json("resource_requests", all_requests)
+                    add_audit(admin["user_id"], "RESOURCE_REQUEST_HOLD", req["id"], memo.strip())
+                    st.success("보류 처리했습니다.")
+                    st.rerun()
+
+                if reject:
+                    for item in all_requests:
+                        if item.get("id") == req.get("id"):
+                            item["status"] = "반려"
+                            item["processing_stage"] = "반려 처리 완료"
+                            item["ai_reflect_status"] = "AI 미반영" if req_type == "등록" else "해당 없음"
+                            item["admin_memo"] = memo.strip()
+                            item["processed_at"] = now_iso()
+                            item["processed_by"] = admin["user_id"]
+                    save_json("resource_requests", all_requests)
+                    add_audit(admin["user_id"], "RESOURCE_REQUEST_REJECT", req["id"], f"{req_type} / {memo.strip()}")
+                    st.success("반려 처리했습니다.")
+                    st.rerun()
+
                 if req_type == "삭제" and approve:
                     all_resources = load_json("resources", [])
-                    before_count = len(all_resources)
                     target_id = req.get("resource_id", "")
-                    all_resources = [item for item in all_resources if item.get("id") != target_id]
-                    if len(all_resources) == before_count:
+                    found = False
+                    for item in all_resources:
+                        if item.get("id") == target_id:
+                            item["deleted"] = True
+                            item["status"] = "삭제됨"
+                            item["ai_search_enabled"] = False
+                            item["updated_at"] = now_iso()
+                            item["delete_reason"] = req.get("reason", "")
+                            found = True
+                    if not found:
                         st.error("삭제 대상 자료를 찾지 못했습니다. 이미 삭제되었거나 자료 ID가 일치하지 않습니다.")
                         continue
                     save_json("resources", all_resources)
-                    add_audit(
-                        admin["user_id"],
-                        "RESOURCE_DELETE_BY_REQUEST",
-                        target_id,
-                        f"{req.get('title', '')} / 요청ID {req.get('id')} / {memo.strip()}",
-                    )
-                all_requests = load_json("resource_requests", [])
-                for item in all_requests:
-                    if item.get("id") == req.get("id"):
-                        item["status"] = new_status
-                        item["admin_memo"] = memo.strip()
-                        item["processed_at"] = now_iso()
-                        item["processed_by"] = admin["user_id"]
-                save_json("resource_requests", all_requests)
-                add_audit(admin["user_id"], "RESOURCE_REQUEST_PROCESS", req["id"], f"{req_type} / {new_status} / {memo.strip()}")
-                if req_type == "삭제" and approve:
-                    st.success("자료 삭제 요청을 승인했고, 해당 자료를 삭제했습니다.")
-                elif req_type == "등록" and approve:
-                    st.success("등록 요청을 승인했습니다. 실제 자료 공개는 관리자 자료 등록 화면에서 기본 비공개 기준으로 별도 등록하십시오.")
-                else:
-                    st.success(f"{new_status} 처리했습니다.")
-                st.rerun()
+                    for item in all_requests:
+                        if item.get("id") == req.get("id"):
+                            item["status"] = "승인 완료"
+                            item["processing_stage"] = "관리자 처리 완료"
+                            item["ai_reflect_status"] = "해당 없음"
+                            item["admin_memo"] = memo.strip()
+                            item["processed_at"] = now_iso()
+                            item["processed_by"] = admin["user_id"]
+                    save_json("resource_requests", all_requests)
+                    add_audit(admin["user_id"], "RESOURCE_DELETE_BY_REQUEST", target_id, f"{req.get('title', '')} / 요청ID {req.get('id')} / {memo.strip()}")
+                    st.success("자료 삭제 요청을 승인했고, 해당 자료를 삭제 처리했습니다.")
+                    st.rerun()
+
+                if req_type == "등록" and approve:
+                    visibility = visibility_code(visibility_choice)
+                    ai_search_enabled = ai_search_choice == "AI 검색 포함"
+                    if not title.strip() or not agency.strip():
+                        st.error("자료명, 발행기관은 필수입니다.")
+                        continue
+                    if visibility == "Public" and not source_url.strip():
+                        st.error("전체 공개 자료는 공식 출처 URL을 입력해야 합니다.")
+                        continue
+                    if source_url.strip() and not is_valid_url(source_url.strip()):
+                        st.error("출처 URL 형식이 올바르지 않습니다.")
+                        continue
+                    resource_id = uid("res")
+                    try:
+                        if replace_pdf is not None:
+                            file_info = save_resource_pdf(resource_id, replace_pdf, max_mb=50, root_name="approved")
+                        else:
+                            file_info = promote_pending_pdf_to_resource(resource_id, req)
+                    except ValueError as e:
+                        st.error(str(e))
+                        continue
+                    ai_reflect_status = "해당 없음"
+                    if ai_search_enabled:
+                        ai_reflect_status = "AI 반영 완료" if is_text_extracted_status(file_info.get("attached_file_text_status")) else "AI 반영 실패"
+                    elif file_info:
+                        ai_reflect_status = "AI 미반영"
+                    record = {
+                        "id": resource_id,
+                        "title": title.strip(),
+                        "category": category,
+                        "agency": agency.strip(),
+                        "source_url": source_url.strip(),
+                        "summary": summary.strip(),
+                        "visibility": visibility,
+                        "ai_search_enabled": ai_search_enabled,
+                        "status": resource_status,
+                        "non_public_reason": "사용자 요청 승인 자료" if visibility in ["Hidden", "AdminOnly"] else "",
+                        "created_at": now_iso(),
+                        "checked_at": checked_at.strftime("%Y-%m-%d"),
+                        "created_by": admin["user_id"],
+                        "updated_at": now_iso(),
+                        "source_request_id": req.get("id"),
+                        "admin_memo": memo.strip(),
+                        **file_info,
+                    }
+                    resources = load_json("resources", [])
+                    resources.append(record)
+                    save_json("resources", resources)
+                    for item in all_requests:
+                        if item.get("id") == req.get("id"):
+                            item["status"] = "승인 완료"
+                            item["processing_stage"] = "관리자 처리 완료"
+                            item["ai_reflect_status"] = ai_reflect_status
+                            item["admin_memo"] = memo.strip()
+                            item["processed_at"] = now_iso()
+                            item["processed_by"] = admin["user_id"]
+                            item["approved_resource_id"] = resource_id
+                    save_json("resource_requests", all_requests)
+                    add_audit(admin["user_id"], "RESOURCE_REQUEST_APPROVE", req["id"], f"등록 승인 / 자료ID {resource_id} / {ai_reflect_status}")
+                    if ai_reflect_status == "AI 반영 실패":
+                        st.warning("등록 요청을 승인했지만 PDF 본문 추출에 실패했습니다. 스캔본 여부를 확인하십시오.")
+                    else:
+                        st.success("등록 요청을 승인했고 자료로 등록했습니다.")
+                    st.rerun()
 
 
 def admin_user_manage() -> None:
@@ -3697,23 +4076,26 @@ def admin_permission_requests() -> None:
 def sidebar_menu() -> str:
     user = current_user()
     assert user is not None
+    user_role_label = role_label(user)
+    brand_html = '<span>충남119 </span><span class="brand-ai">A</span><span> ss </span><span class="brand-ai">I</span><span> st</span>'
     st.sidebar.markdown(
         f"""
         <div style="padding: 6px 2px 14px 2px;">
             <div class="sidebar-logo"><img src="{SAEMAE_LOGO_DATA_URI}" alt="소방 상징 이미지"></div>
-            <div style="font-size:25px;font-weight:900;margin-top:12px;letter-spacing:-0.03em;line-height:1.15;">{APP_NAME}</div>
+            <div style="font-size:25px;font-weight:900;margin-top:12px;letter-spacing:-0.03em;line-height:1.15;">{brand_html}</div>
+            <div style="font-size:15px;opacity:.92;font-weight:800;margin-top:6px;">{APP_SUBTITLE}</div>
             <div style="font-size:15px;opacity:.92;font-weight:800;margin-top:6px;">{APP_VERSION}</div>
         </div>
         <div style="background:rgba(255,255,255,0.10);border:1px solid rgba(255,255,255,0.18);border-radius:18px;padding:17px 18px;margin-bottom:14px;">
             <div style="font-size:20px;font-weight:900;">{esc(user.get('user_id'))}</div>
-            <div style="font-size:15px;font-weight:800;opacity:.92;margin-top:5px;">권한: {esc(user.get('role'))}</div>
+            <div style="font-size:15px;font-weight:800;opacity:.92;margin-top:5px;">권한: {esc(user_role_label)}</div>
         </div>
         {sidebar_stats_html(user)}
         """,
         unsafe_allow_html=True,
     )
-    base_menus = ["홈", "법령·조례 자료", "자료 등록 요청"]
-    if user.get("role") == "admin":
+    base_menus = ["홈", "법령 자료실", "자료 등록 요청"]
+    if user.get("role") == "admin" and st.session_state.get("admin_mode", False):
         base_menus.append("관리자")
     menu = st.sidebar.radio("메뉴", base_menus, label_visibility="collapsed")
     st.sidebar.markdown(
@@ -3737,21 +4119,31 @@ def topbar() -> None:
     user = current_user()
     if user is None:
         return
-    role_label = "관리자" if user.get("role") == "admin" else "일반 사용자"
-    left, request_col, logout_col = st.columns([7.2, 1.3, 1.1])
+    user_role_label = role_label(user)
+    brand_html = '<span>충남119 </span><span class="brand-ai">A</span><span> ss </span><span class="brand-ai">I</span><span> st</span>'
+    left, mode_col, request_col, logout_col = st.columns([6.6, 1.2, 1.2, 1.1])
     with left:
         st.markdown(
             f"""
             <div class="topbar">
                 <div>
-                    <b>{APP_NAME}</b> <span class="badge">{esc(role_label)}</span>
-                    <div class="official-mini">충남소방본부 제공 공식 AI가 아닌 비공식 참고 서비스</div>
+                    <b>{brand_html}</b> <span class="badge">{esc(user_role_label)}</span>
+                    <div class="official-mini">{APP_SUBTITLE} · 충남소방본부 제공 공식 AI가 아닌 비공식 참고 서비스</div>
                 </div>
                 <div class="muted">{datetime.now().strftime('%Y-%m-%d %H:%M')}</div>
             </div>
             """,
             unsafe_allow_html=True,
         )
+    with mode_col:
+        if user.get("role") == "admin":
+            admin_mode = bool(st.session_state.get("admin_mode", False))
+            next_label = "일반사용자" if admin_mode else "관리자"
+            if st.button(next_label, key="topbar_admin_mode_toggle", use_container_width=True):
+                st.session_state["admin_mode"] = not admin_mode
+                st.rerun()
+        else:
+            st.markdown("<div style='height:50px;'></div>", unsafe_allow_html=True)
     with request_col:
         if user.get("role") != "admin":
             if st.button("권한 요청", key="top_admin_request_open_btn", use_container_width=True):
@@ -3810,6 +4202,8 @@ def main() -> None:
     check_session()
     if "show_login_privacy_notice" not in st.session_state:
         st.session_state["show_login_privacy_notice"] = True
+    if "admin_mode" not in st.session_state:
+        st.session_state["admin_mode"] = False
     if not privacy_notice_confirmed():
         render_login_privacy_notice()
         return
@@ -3817,13 +4211,10 @@ def main() -> None:
     menu = sidebar_menu()
     if menu == "홈":
         home_page()
-    elif menu == "법령·조례 자료":
+    elif menu == "법령 자료실":
         resources_page()
     elif menu == "자료 등록 요청":
         resource_request_page()
     elif menu == "관리자":
         admin_page()
 
-
-if __name__ == "__main__":
-    main()
